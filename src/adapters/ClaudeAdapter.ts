@@ -9,14 +9,29 @@ import type {
   AgentCommandOptions,
   AgentEvent,
   HookConfig,
+  PreToolUseEvent,
+  PostToolUseEvent,
+  StopEvent,
+  SubagentStopEvent,
+  SessionStartEvent,
+  SessionEndEvent,
+  UserPromptSubmitEvent,
+  NotificationEvent,
+  TerminalInfo,
 } from '../types.js'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+import { readFile, writeFile, access } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
+import { randomUUID } from 'crypto'
+
+const execAsync = promisify(exec)
 
 /**
  * Default Claude Code flags for internal sessions.
  */
-const DEFAULT_FLAGS = {
+const DEFAULT_FLAGS: Record<string, boolean | string> = {
   'dangerously-skip-permissions': true,
 }
 
@@ -35,6 +50,56 @@ const HOOK_NAMES = [
 ]
 
 /**
+ * Map Claude hook names to event types.
+ */
+const HOOK_TYPE_MAP: Record<string, AgentEvent['type']> = {
+  PreToolUse: 'pre_tool_use',
+  PostToolUse: 'post_tool_use',
+  Stop: 'stop',
+  SubagentStop: 'subagent_stop',
+  SessionStart: 'session_start',
+  SessionEnd: 'session_end',
+  UserPromptSubmit: 'user_prompt_submit',
+  Notification: 'notification',
+}
+
+/**
+ * Claude hook data structure (from stdin).
+ */
+interface ClaudeHookData {
+  session_id?: string
+  cwd?: string
+  tool_name?: string
+  tool_input?: Record<string, unknown>
+  tool_use_id?: string
+  tool_response?: Record<string, unknown>
+  error?: string
+  stop_hook_active?: boolean
+  transcript_path?: string
+  source?: string
+  message?: string
+  level?: string
+}
+
+/**
+ * Parse terminal info from environment variables in hook data.
+ */
+function parseTerminalInfo(data: ClaudeHookData & Record<string, unknown>): TerminalInfo | undefined {
+  const tmuxPane = data.tmux_pane as string | undefined
+  const tmuxSocket = data.tmux_socket as string | undefined
+  const tty = data.tty as string | undefined
+
+  if (tmuxPane || tmuxSocket || tty) {
+    return {
+      tmuxPane,
+      tmuxSocket,
+      tty,
+    }
+  }
+  return undefined
+}
+
+/**
  * Adapter for Claude Code CLI.
  */
 export const ClaudeAdapter: AgentAdapter = {
@@ -43,69 +108,120 @@ export const ClaudeAdapter: AgentAdapter = {
 
   buildCommand(options?: AgentCommandOptions): string {
     const flags = { ...DEFAULT_FLAGS, ...options?.flags }
-    const flagsStr = Object.entries(flags)
-      .filter(([_, value]) => value !== false)
-      .map(([key, value]) => {
-        if (value === true) return `--${key}`
-        return `--${key}=${value}`
-      })
-      .join(' ')
+    const parts = ['claude']
 
-    return `claude ${flagsStr}`.trim()
+    for (const [key, value] of Object.entries(flags)) {
+      if (value === false) continue
+      if (value === true) {
+        parts.push(`--${key}`)
+      } else {
+        parts.push(`--${key}=${value}`)
+      }
+    }
+
+    return parts.join(' ')
   },
 
   parseHookEvent(hookName: string, data: unknown): Partial<AgentEvent> | null {
     if (!data || typeof data !== 'object') return null
 
-    const d = data as Record<string, unknown>
-
-    // Map hook names to event types
-    const typeMap: Record<string, AgentEvent['type']> = {
-      PreToolUse: 'pre_tool_use',
-      PostToolUse: 'post_tool_use',
-      Stop: 'stop',
-      SubagentStop: 'subagent_stop',
-      SessionStart: 'session_start',
-      SessionEnd: 'session_end',
-      UserPromptSubmit: 'user_prompt_submit',
-      Notification: 'notification',
-    }
-
-    const type = typeMap[hookName]
+    const type = HOOK_TYPE_MAP[hookName]
     if (!type) return null
 
-    const event: Partial<AgentEvent> = {
+    const d = data as ClaudeHookData & Record<string, unknown>
+
+    // Base event properties
+    const baseEvent = {
+      id: randomUUID(),
+      timestamp: Date.now(),
       type,
-      agent: 'claude',
-      cwd: typeof d.cwd === 'string' ? d.cwd : process.cwd(),
+      agent: 'claude' as const,
+      cwd: d.cwd ?? process.cwd(),
+      agentSessionId: d.session_id,
     }
 
-    // Extract session ID
-    if (typeof d.session_id === 'string') {
-      event.agentSessionId = d.session_id
-    }
-
-    // Type-specific fields
-    if (type === 'pre_tool_use' || type === 'post_tool_use') {
-      const toolData = d as Record<string, unknown>
-      if (typeof toolData.tool === 'string') {
-        (event as Record<string, unknown>).tool = toolData.tool
-      }
-      if (toolData.tool_input) {
-        (event as Record<string, unknown>).toolInput = toolData.tool_input
-      }
-      if (typeof toolData.tool_use_id === 'string') {
-        (event as Record<string, unknown>).toolUseId = toolData.tool_use_id
-      }
-      if (type === 'post_tool_use') {
-        if (toolData.tool_response) {
-          (event as Record<string, unknown>).toolResponse = toolData.tool_response
+    // Type-specific event building
+    switch (type) {
+      case 'pre_tool_use': {
+        const event: Partial<PreToolUseEvent> = {
+          ...baseEvent,
+          type: 'pre_tool_use',
+          tool: d.tool_name ?? 'unknown',
+          toolInput: d.tool_input ?? {},
+          toolUseId: d.tool_use_id ?? randomUUID(),
         }
-        (event as Record<string, unknown>).success = toolData.success !== false
+        return event
       }
-    }
 
-    return event
+      case 'post_tool_use': {
+        const event: Partial<PostToolUseEvent> = {
+          ...baseEvent,
+          type: 'post_tool_use',
+          tool: d.tool_name ?? 'unknown',
+          toolInput: d.tool_input ?? {},
+          toolResponse: d.tool_response ?? {},
+          toolUseId: d.tool_use_id ?? randomUUID(),
+          success: !d.error,
+        }
+        return event
+      }
+
+      case 'stop': {
+        const event: Partial<StopEvent> = {
+          ...baseEvent,
+          type: 'stop',
+          stopHookActive: d.stop_hook_active ?? false,
+        }
+        return event
+      }
+
+      case 'subagent_stop': {
+        const event: Partial<SubagentStopEvent> = {
+          ...baseEvent,
+          type: 'subagent_stop',
+        }
+        return event
+      }
+
+      case 'session_start': {
+        const event: Partial<SessionStartEvent> = {
+          ...baseEvent,
+          type: 'session_start',
+          source: d.source ?? 'unknown',
+          terminal: parseTerminalInfo(d),
+        }
+        return event
+      }
+
+      case 'session_end': {
+        const event: Partial<SessionEndEvent> = {
+          ...baseEvent,
+          type: 'session_end',
+        }
+        return event
+      }
+
+      case 'user_prompt_submit': {
+        const event: Partial<UserPromptSubmitEvent> = {
+          ...baseEvent,
+          type: 'user_prompt_submit',
+        }
+        return event
+      }
+
+      case 'notification': {
+        const event: Partial<NotificationEvent> = {
+          ...baseEvent,
+          type: 'notification',
+          message: d.message,
+          level: d.level,
+        }
+        return event
+      }
+
+      default:
+        return baseEvent
+    }
   },
 
   extractSessionId(event: Partial<AgentEvent>): string | undefined {
@@ -121,27 +237,89 @@ export const ClaudeAdapter: AgentAdapter = {
   },
 
   getSettingsPath(): string {
-    // Check for XDG config first, fall back to ~/.claude
+    // Check for XDG config first
     const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), '.config')
     const xdgPath = join(xdgConfig, 'claude', 'settings.json')
     const defaultPath = join(homedir(), '.claude', 'settings.json')
 
-    // TODO: Check which exists and return that
+    // Prefer XDG path if XDG_CONFIG_HOME is set
+    if (process.env.XDG_CONFIG_HOME) {
+      return xdgPath
+    }
     return defaultPath
   },
 
-  async installHooks(_hookScriptPath: string): Promise<void> {
-    // TODO: Implement in Phase 6
-    throw new Error('installHooks not yet implemented')
+  async installHooks(hookScriptPath: string): Promise<void> {
+    const settingsPath = this.getSettingsPath()
+
+    // Read existing settings or create new
+    let settings: Record<string, unknown> = {}
+    try {
+      const content = await readFile(settingsPath, 'utf8')
+      settings = JSON.parse(content)
+    } catch {
+      // File doesn't exist or invalid JSON - start fresh
+    }
+
+    // Ensure hooks object exists
+    if (!settings.hooks || typeof settings.hooks !== 'object') {
+      settings.hooks = {}
+    }
+    const hooks = settings.hooks as Record<string, unknown>
+
+    // Add hook configurations for each hook name
+    for (const hookName of HOOK_NAMES) {
+      hooks[hookName] = [
+        {
+          matcher: '*',
+          hooks: [
+            {
+              type: 'command',
+              command: hookScriptPath,
+              timeout: 5,
+            },
+          ],
+        },
+      ]
+    }
+
+    // Write updated settings
+    await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf8')
   },
 
   async uninstallHooks(): Promise<void> {
-    // TODO: Implement in Phase 6
-    throw new Error('uninstallHooks not yet implemented')
+    const settingsPath = this.getSettingsPath()
+
+    try {
+      const content = await readFile(settingsPath, 'utf8')
+      const settings = JSON.parse(content) as Record<string, unknown>
+
+      if (settings.hooks && typeof settings.hooks === 'object') {
+        const hooks = settings.hooks as Record<string, unknown>
+
+        // Remove our hook configurations
+        for (const hookName of HOOK_NAMES) {
+          delete hooks[hookName]
+        }
+
+        // Remove hooks object if empty
+        if (Object.keys(hooks).length === 0) {
+          delete settings.hooks
+        }
+
+        await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf8')
+      }
+    } catch {
+      // Settings file doesn't exist or can't be read - nothing to uninstall
+    }
   },
 
   async isAvailable(): Promise<boolean> {
-    // TODO: Check if 'claude' command exists in PATH
-    return true
+    try {
+      await execAsync('which claude')
+      return true
+    } catch {
+      return false
+    }
   },
 }

@@ -82,6 +82,25 @@ export type {
 } from './types.js'
 
 // =============================================================================
+// Core Components
+// =============================================================================
+
+export {
+  TmuxExecutor,
+  createTmuxExecutor,
+  validateSessionName,
+  validatePath,
+  validatePaneId,
+} from './TmuxExecutor.js'
+
+export type {
+  TmuxSession,
+  TmuxExecutorOptions,
+  SendKeysOptions,
+  PasteBufferOptions,
+} from './TmuxExecutor.js'
+
+// =============================================================================
 // Adapters
 // =============================================================================
 
