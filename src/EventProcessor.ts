@@ -32,6 +32,8 @@ type AdapterObject = AgentAdapter
 export interface EventProcessorOptions {
   /** Enable debug logging */
   debug?: boolean
+  /** Enable verbose trace logging (shows all event field detection) */
+  trace?: boolean
 }
 
 export interface ProcessedEvent {
@@ -103,6 +105,7 @@ export class EventProcessor extends EventEmitter {
     super()
     this.options = {
       debug: options.debug ?? false,
+      trace: options.trace ?? false,
     }
 
     // Register default adapters
@@ -124,16 +127,34 @@ export class EventProcessor extends EventEmitter {
     try {
       const raw = JSON.parse(line) as RawHookEvent
 
+      // Trace raw event fields for debugging
+      this.trace('--- Processing event ---')
+      this.trace('  Raw fields:', {
+        hook_event_name: raw.hook_event_name,
+        hook_type: raw.hook_type,
+        type: raw.type,
+        event_type: raw.event_type,
+        agent: raw.agent,
+        session_id: raw.session_id,
+        claude_session_id: raw.claude_session_id,
+        tool_name: raw.tool_name,
+        tmux_pane: raw.tmux_pane,
+      })
+
       // Determine agent type
       const agent = this.detectAgent(raw)
       if (!agent) {
+        this.trace('  FAILED: Could not detect agent type')
+        this.trace('    Checked: agent field, claude_session_id, hook types, event structure')
         this.debug('Could not detect agent type for event:', line.substring(0, 100))
         return null
       }
+      this.trace('  Detected agent:', agent)
 
       // Get adapter
       const adapter = this.adapters.get(agent)
       if (!adapter) {
+        this.trace('  FAILED: No adapter registered for agent:', agent)
         this.debug('No adapter for agent:', agent)
         return null
       }
@@ -141,17 +162,24 @@ export class EventProcessor extends EventEmitter {
       // Extract hook name for adapter
       // Claude Code uses hook_event_name, others may use hook_type, type, or event_type
       const hookName = raw.hook_event_name || raw.hook_type || raw.type || raw.event_type || ''
+      this.trace('  Hook name extracted:', hookName || '(empty)')
 
       // Use adapter to parse the event
       const partialEvent = adapter.parseHookEvent(hookName, raw)
       if (!partialEvent) {
+        this.trace('  FAILED: Adapter could not parse hook:', hookName)
+        this.trace('    Known Claude hooks: PreToolUse, PostToolUse, Stop, SubagentStop, SessionStart, SessionEnd, UserPromptSubmit, Notification')
         this.debug('Adapter could not parse event:', line.substring(0, 100))
         return null
       }
+      this.trace('  Parsed event type:', partialEvent.type)
 
       // Validate and complete the event
       const event = this.validateEvent(partialEvent)
       if (!event) {
+        this.trace('  FAILED: Invalid event (missing type or agent)')
+        this.trace('    partial.type:', partialEvent.type)
+        this.trace('    partial.agent:', partialEvent.agent)
         this.debug('Invalid event (missing required fields):', line.substring(0, 100))
         return null
       }
@@ -161,12 +189,18 @@ export class EventProcessor extends EventEmitter {
         adapter.extractSessionId(partialEvent) ||
         this.extractSessionId(raw, agent)
       if (!agentSessionId) {
+        this.trace('  FAILED: No session ID found')
+        this.trace('    Checked: adapter.extractSessionId, claude_session_id, session_id, tmux_pane, tty')
         this.debug('No session ID in event:', line.substring(0, 100))
         return null
       }
+      this.trace('  Session ID:', agentSessionId)
 
       // Extract terminal info
       const terminal = this.extractTerminalInfo(raw)
+      if (terminal) {
+        this.trace('  Terminal:', terminal)
+      }
 
       // Extract cwd
       const cwd = raw.cwd || raw.working_directory
@@ -179,6 +213,7 @@ export class EventProcessor extends EventEmitter {
         cwd,
       }
 
+      this.trace('  SUCCESS:', event.type, 'from', agent, 'session', agentSessionId)
       this.debug('Processed event:', event.type, 'session:', agentSessionId)
       this.emit('event', processed)
 
@@ -186,6 +221,7 @@ export class EventProcessor extends EventEmitter {
     } catch (err) {
       const error =
         err instanceof Error ? err : new Error(String(err))
+      this.trace('  ERROR:', error.message)
       this.emit('error', error, line)
       return null
     }
@@ -318,6 +354,12 @@ export class EventProcessor extends EventEmitter {
   private debug(...args: unknown[]): void {
     if (this.options.debug) {
       console.log('[EventProcessor]', ...args)
+    }
+  }
+
+  private trace(...args: unknown[]): void {
+    if (this.options.trace) {
+      console.log('[EventProcessor:trace]', ...args)
     }
   }
 }
