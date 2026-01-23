@@ -60,6 +60,7 @@ interface RawHookEvent {
   event_type?: string
   type?: string
   hook_type?: string
+  hook_event_name?: string  // Claude Code uses this field name
   timestamp?: string
   cwd?: string
   working_directory?: string
@@ -138,7 +139,8 @@ export class EventProcessor extends EventEmitter {
       }
 
       // Extract hook name for adapter
-      const hookName = raw.hook_type || raw.type || raw.event_type || ''
+      // Claude Code uses hook_event_name, others may use hook_type, type, or event_type
+      const hookName = raw.hook_event_name || raw.hook_type || raw.type || raw.event_type || ''
 
       // Use adapter to parse the event
       const partialEvent = adapter.parseHookEvent(hookName, raw)
@@ -229,7 +231,7 @@ export class EventProcessor extends EventEmitter {
       'Notification',
     ]
 
-    const hookType = raw.hook_type || raw.type || raw.event_type
+    const hookType = raw.hook_event_name || raw.hook_type || raw.type || raw.event_type
     if (hookType && claudeHookTypes.includes(hookType)) {
       return 'claude'
     }
