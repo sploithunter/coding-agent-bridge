@@ -149,6 +149,24 @@ export { ClaudeAdapter } from './adapters/ClaudeAdapter.js'
 export { CodexAdapter } from './adapters/CodexAdapter.js'
 
 // =============================================================================
+// Installation & CLI
+// =============================================================================
+
+export {
+  HookInstaller,
+  createHookInstaller,
+  setupHooks,
+  uninstallHooks,
+  checkDependencies,
+} from './HookInstaller.js'
+
+export type {
+  HookInstallerConfig,
+  DependencyCheck,
+  InstallResult,
+} from './HookInstaller.js'
+
+// =============================================================================
 // Main API
 // =============================================================================
 
