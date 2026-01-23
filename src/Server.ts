@@ -320,13 +320,13 @@ export class BridgeServer extends EventEmitter {
     this.clients.add(ws)
     this.emit('connection', ws)
 
-    // Send current sessions on connect
+    // Send current sessions on connect (per WEBSOCKET_INTERFACE.md spec)
     if (this.sessionManager) {
       const sessions = this.sessionManager.listSessions()
       ws.send(
         JSON.stringify({
           type: 'init',
-          sessions,
+          data: { sessions },
         })
       )
     }

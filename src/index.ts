@@ -196,6 +196,54 @@ export function createBridge(_config?: BridgeConfig): Bridge {
 }
 
 // =============================================================================
+// WebSocket Interface Types
+// =============================================================================
+
+export type {
+  // Base message type
+  WSMessage,
+  WSInitData,
+
+  // Server → Client messages
+  WSInitMessage,
+  WSEventMessage,
+  WSSessionCreatedMessage,
+  WSSessionUpdatedMessage,
+  WSSessionDeletedMessage,
+  WSSessionStatusMessage,
+  WSHistoryMessage,
+  WSPongMessage,
+
+  // Client → Server messages
+  WSPingMessage,
+  WSGetHistoryMessage,
+  WSGetHistoryData,
+  WSSubscribeMessage,
+  WSSubscribeData,
+
+  // Union types
+  WSServerMessage,
+  WSClientMessage,
+  WSAnyMessage,
+
+  // Extensions
+  WSExtensionMessage,
+} from './websocket-types.js'
+
+export {
+  // Type guards
+  isInitMessage,
+  isEventMessage,
+  isSessionMessage,
+  isHistoryMessage,
+  isExtensionMessage,
+
+  // Helpers
+  createMessage,
+  parseMessage,
+} from './websocket-types.js'
+
+// =============================================================================
 // Utilities
 // =============================================================================
 
