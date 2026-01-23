@@ -178,9 +178,15 @@ export class BridgeServer extends EventEmitter {
    * Broadcast an event to all connected clients
    */
   broadcast(event: AgentEvent | ProcessedEvent): void {
+    // If it's a ProcessedEvent, extract the actual event
+    // ProcessedEvent has { event: AgentEvent, agentSessionId, ... }
+    const eventData = 'event' in event && 'agentSessionId' in event
+      ? (event as ProcessedEvent).event
+      : event
+
     const message = JSON.stringify({
       type: 'event',
-      data: event,
+      data: eventData,
     })
 
     for (const client of this.clients) {
