@@ -375,8 +375,13 @@ async function runServer(ctx) {
   watcher.on('line', (line) => {
     const processed = processor.processLine(line)
     if (processed) {
-      // Update session status
-      const session = manager.getSessionByAgentId(processed.agentSessionId)
+      // Find or create session (links agentSessionId to internal sessions)
+      const session = manager.findOrCreateSession(
+        processed.agentSessionId,
+        processed.event.agent || 'claude',
+        processed.event.cwd,
+        processed.terminal
+      )
       if (session) {
         if (processed.event.type === 'stop' || processed.event.type === 'session_end') {
           manager.updateSessionStatus(session, 'idle')
