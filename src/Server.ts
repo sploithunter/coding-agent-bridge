@@ -87,12 +87,16 @@ function matchOrigin(origin: string, patterns: string[]): boolean {
   return false
 }
 
+/** Callback type for processing raw events from POST /event */
+export type EventProcessorCallback = (rawEvent: unknown) => AgentEvent | null
+
 export class BridgeServer extends EventEmitter {
   private config: Required<ServerConfig>
   private httpServer: HttpServer | null = null
   private wss: WebSocketServer | null = null
   private clients: Set<WebSocket> = new Set()
   private sessionManager: SessionManager | null = null
+  private eventProcessor: EventProcessorCallback | null = null
 
   constructor(config: ServerConfig = {}) {
     super()
@@ -114,6 +118,13 @@ export class BridgeServer extends EventEmitter {
    */
   setSessionManager(manager: SessionManager): void {
     this.sessionManager = manager
+  }
+
+  /**
+   * Set the event processor callback for transforming raw POST /event data
+   */
+  setEventProcessor(processor: EventProcessorCallback): void {
+    this.eventProcessor = processor
   }
 
   /**
@@ -518,13 +529,24 @@ export class BridgeServer extends EventEmitter {
   }
 
   private async handleEventPost(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = await parseBody<AgentEvent>(req)
+    const body = await parseBody<Record<string, unknown>>(req)
     if (!body) {
       return sendError(res, 'Invalid event data')
     }
 
-    // Broadcast the event to all connected clients
-    this.broadcast(body)
+    // If we have an event processor, transform the raw event
+    // Otherwise broadcast the raw data as-is
+    if (this.eventProcessor) {
+      const processed = this.eventProcessor(body)
+      if (processed) {
+        this.broadcast(processed)
+      } else {
+        this.debug('Event processor returned null for:', JSON.stringify(body).substring(0, 100))
+      }
+    } else {
+      // Broadcast raw event (legacy behavior)
+      this.broadcast(body as unknown as AgentEvent)
+    }
 
     sendJson(res, { success: true })
   }

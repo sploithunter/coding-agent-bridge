@@ -371,6 +371,14 @@ async function runServer(ctx) {
   })
   server.setSessionManager(manager)
 
+  // Set up event processor for POST /event endpoint
+  // This transforms raw hook events to the standard AgentEvent format
+  server.setEventProcessor((rawEvent) => {
+    // Process the raw event (same as FileWatcher path)
+    const processed = processor.processLine(JSON.stringify(rawEvent))
+    return processed ? processed.event : null
+  })
+
   // Wire up events
   watcher.on('line', (line) => {
     const processed = processor.processLine(line)

@@ -139,6 +139,7 @@ export {
 export type {
   ServerConfig,
   ServerEvents,
+  EventProcessorCallback,
 } from './Server.js'
 
 // =============================================================================
