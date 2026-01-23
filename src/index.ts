@@ -100,6 +100,16 @@ export type {
   PasteBufferOptions,
 } from './TmuxExecutor.js'
 
+export {
+  SessionManager,
+  createSessionManager,
+} from './SessionManager.js'
+
+export type {
+  SessionManagerConfig,
+  SessionManagerEvents,
+} from './SessionManager.js'
+
 // =============================================================================
 // Adapters
 // =============================================================================
