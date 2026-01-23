@@ -131,6 +131,16 @@ export type {
   ProcessedEvent,
 } from './EventProcessor.js'
 
+export {
+  BridgeServer,
+  createServer as createBridgeServer,
+} from './Server.js'
+
+export type {
+  ServerConfig,
+  ServerEvents,
+} from './Server.js'
+
 // =============================================================================
 // Adapters
 // =============================================================================
