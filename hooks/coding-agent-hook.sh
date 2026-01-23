@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# claude-tmux-bridge Universal Hook Script
+# coding-agent-bridge Universal Hook Script
 #
 # This script handles hook events from multiple AI coding assistants:
 # - Claude Code (via PreToolUse, PostToolUse, Stop, etc. hooks)
@@ -18,10 +18,10 @@ set -euo pipefail
 # =============================================================================
 
 # Data directory - can be overridden via environment
-BRIDGE_DATA_DIR="${CLAUDE_TMUX_BRIDGE_DATA_DIR:-$HOME/.claude-tmux-bridge}"
+BRIDGE_DATA_DIR="${CODING_AGENT_BRIDGE_DATA_DIR:-$HOME/.coding-agent-bridge}"
 EVENTS_FILE="${BRIDGE_DATA_DIR}/data/events.jsonl"
-SERVER_URL="${CLAUDE_TMUX_BRIDGE_SERVER:-http://localhost:4003}"
-DEBUG="${CLAUDE_TMUX_BRIDGE_DEBUG:-}"
+SERVER_URL="${CODING_AGENT_BRIDGE_SERVER:-http://localhost:4003}"
+DEBUG="${CODING_AGENT_BRIDGE_DEBUG:-}"
 
 # =============================================================================
 # Utility Functions
@@ -29,7 +29,7 @@ DEBUG="${CLAUDE_TMUX_BRIDGE_DEBUG:-}"
 
 debug_log() {
   if [ -n "$DEBUG" ]; then
-    echo "[claude-bridge-hook] $*" >&2
+    echo "[coding-agent-hook] $*" >&2
   fi
 }
 

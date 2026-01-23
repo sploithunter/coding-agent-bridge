@@ -1,7 +1,7 @@
 {
-  "name": "claude-tmux-bridge",
+  "name": "coding-agent-bridge",
   "version": "0.1.0",
-  "description": "A bridge for managing Claude Code and Codex sessions via tmux with hooks integration",
+  "description": "A bridge for managing AI coding assistant sessions (Claude, Codex, etc.) via tmux with hooks integration",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,7 +16,7 @@
     }
   },
   "bin": {
-    "claude-tmux-bridge": "./bin/cli.js"
+    "coding-agent-bridge": "./bin/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -29,16 +29,18 @@
     "claude",
     "claude-code",
     "codex",
+    "gemini",
     "tmux",
     "session-manager",
     "ai-coding",
+    "coding-assistant",
     "hooks"
   ],
   "author": "",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-username/claude-tmux-bridge.git"
+    "url": "git+https://github.com/sploithunter/coding-agent-bridge.git"
   },
   "engines": {
     "node": ">=18.0.0"

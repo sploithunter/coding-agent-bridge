@@ -1,6 +1,6 @@
-# claude-tmux-bridge
+# coding-agent-bridge
 
-A bridge for managing Claude Code and Codex sessions via tmux with hooks integration.
+A bridge for managing AI coding assistant sessions (Claude Code, Codex, Gemini, etc.) via tmux with hooks integration.
 
 ## Features
 
@@ -13,7 +13,7 @@ A bridge for managing Claude Code and Codex sessions via tmux with hooks integra
 ## Installation
 
 ```bash
-npm install claude-tmux-bridge
+npm install coding-agent-bridge
 ```
 
 ### Prerequisites
@@ -21,12 +21,12 @@ npm install claude-tmux-bridge
 - Node.js 18+
 - tmux
 - jq (for hook script)
-- Claude Code and/or Codex CLI installed
+- One or more AI coding assistants: Claude Code, Codex, etc.
 
 ## Quick Start
 
 ```typescript
-import { createBridge } from 'claude-tmux-bridge'
+import { createBridge } from 'coding-agent-bridge'
 
 // Create a bridge instance
 const bridge = createBridge({
@@ -41,10 +41,11 @@ await bridge.start()
 const session = await bridge.createSession({
   name: 'my-project',
   cwd: '/path/to/project',
+  agent: 'claude', // or 'codex'
 })
 
 // Send a prompt
-await bridge.sendPrompt(session.id, 'Hello, Claude!')
+await bridge.sendPrompt(session.id, 'Hello!')
 
 // Listen for events
 bridge.on('event', (event) => {
@@ -59,17 +60,21 @@ bridge.on('session:status', (session, from, to) => {
 ## CLI
 
 ```bash
-# Install hooks for Claude Code and Codex
-claude-tmux-bridge setup
+# Install hooks for all supported agents
+coding-agent-bridge setup
+
+# Install hooks for specific agent
+coding-agent-bridge setup --agent claude
+coding-agent-bridge setup --agent codex
 
 # Check dependencies and hook status
-claude-tmux-bridge doctor
+coding-agent-bridge doctor
 
 # Remove hooks
-claude-tmux-bridge uninstall
+coding-agent-bridge uninstall
 
 # Start the server
-claude-tmux-bridge server
+coding-agent-bridge server
 ```
 
 ## API Reference
@@ -82,7 +87,7 @@ Create a new bridge instance.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `dataDir` | `string` | `~/.claude-tmux-bridge` | Data directory for sessions and events |
+| `dataDir` | `string` | `~/.coding-agent-bridge` | Data directory for sessions and events |
 | `port` | `number` | `4003` | HTTP/WebSocket server port |
 | `defaultAgent` | `string` | `'claude'` | Default agent for new sessions |
 | `agents` | `string[]` | `['claude', 'codex']` | Enabled agent types |
@@ -97,11 +102,15 @@ Create a new bridge instance.
 const session = await bridge.createSession({
   name: 'my-project',
   cwd: '/path/to/project',
-  agent: 'claude',
+  agent: 'claude', // or 'codex'
 })
 
 // List all sessions
 const sessions = bridge.listSessions()
+
+// Filter sessions
+const claudeSessions = bridge.listSessions({ agent: 'claude' })
+const workingSessions = bridge.listSessions({ status: 'working' })
 
 // Get a specific session
 const session = bridge.getSession(id)
@@ -137,12 +146,12 @@ bridge.on('session:status', (session, from, to) => { ... })
 ### Custom Agent Adapters
 
 ```typescript
-import { createBridge, AgentAdapter } from 'claude-tmux-bridge'
+import { createBridge, AgentAdapter } from 'coding-agent-bridge'
 
 const myAdapter: AgentAdapter = {
   name: 'my-agent',
   displayName: 'My AI Agent',
-  buildCommand: (options) => 'my-agent-cli',
+  buildCommand: (options) => 'my-agent-cli --flag',
   parseHookEvent: (hookName, data) => { ... },
   extractSessionId: (event) => event.agentSessionId,
   getHookConfig: () => ({ ... }),
@@ -170,18 +179,33 @@ bridge.registerAgent(myAdapter)
 | WS | `/` | WebSocket for real-time events |
 | GET | `/health` | Server health check |
 
+## Supported Agents
+
+### Claude Code
+- Full hook support (PreToolUse, PostToolUse, Stop, etc.)
+- Session detection and tracking
+- Permission handling
+
+### OpenAI Codex
+- Notify hook support
+- Thread ID tracking
+- Event mapping to common format
+
+### Adding New Agents
+Implement the `AgentAdapter` interface to add support for additional AI coding assistants.
+
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    claude-tmux-bridge                            │
+│                     coding-agent-bridge                          │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │                    HTTP/WebSocket Server                    │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                              │                                   │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
 │  │   Session    │  │    Event     │  │    Agent Adapters     │  │
-│  │   Manager    │◄─┤  Processor   │  │  Claude │ Codex │ ... │  │
+│  │   Manager    │◄─┤  Processor   │  │ Claude │ Codex │ ... │  │
 │  └──────────────┘  └──────────────┘  └───────────────────────┘  │
 │         │                 ▲                     │                │
 │         ▼                 │                     ▼                │

@@ -1,11 +1,11 @@
 /**
- * Claude TMUX Bridge
+ * Coding Agent Bridge
  *
- * A bridge for managing Claude Code and Codex sessions via tmux with hooks integration.
+ * A bridge for managing AI coding assistant sessions (Claude, Codex, etc.) via tmux with hooks integration.
  *
  * @example
  * ```typescript
- * import { createBridge } from 'claude-tmux-bridge'
+ * import { createBridge } from 'coding-agent-bridge'
  *
  * const bridge = createBridge({
  *   dataDir: '~/.my-app',

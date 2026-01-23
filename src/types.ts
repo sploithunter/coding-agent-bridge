@@ -1,5 +1,5 @@
 /**
- * Claude TMUX Bridge - Type Definitions
+ * Coding Agent Bridge - Type Definitions
  *
  * This module defines all types for the bridge API, including sessions,
  * events, configuration, and agent adapters.
@@ -261,7 +261,7 @@ export type AgentEvent =
  * Bridge configuration options.
  */
 export interface BridgeConfig {
-  /** Data directory for storing sessions, events, etc. Default: ~/.claude-tmux-bridge */
+  /** Data directory for storing sessions, events, etc. Default: ~/.coding-agent-bridge */
   dataDir?: string
 
   /** Server port for HTTP/WebSocket. Default: 4003 */
