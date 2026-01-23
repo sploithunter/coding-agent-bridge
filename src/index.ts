@@ -110,6 +110,27 @@ export type {
   SessionManagerEvents,
 } from './SessionManager.js'
 
+export {
+  FileWatcher,
+  createFileWatcher,
+} from './FileWatcher.js'
+
+export type {
+  FileWatcherOptions,
+  FileWatcherEvents,
+} from './FileWatcher.js'
+
+export {
+  EventProcessor,
+  createEventProcessor,
+} from './EventProcessor.js'
+
+export type {
+  EventProcessorOptions,
+  EventProcessorEvents,
+  ProcessedEvent,
+} from './EventProcessor.js'
+
 // =============================================================================
 // Adapters
 // =============================================================================
