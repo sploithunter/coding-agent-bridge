@@ -352,7 +352,10 @@ export class TmuxExecutor {
 
       // Send Enter if requested
       if (sendEnter) {
-        await this.sleep(100)
+        // Wait longer for Claude Code to process the paste, especially for long prompts
+        // 100ms was too short and caused race conditions where Enter was sent before
+        // the terminal processed the pasted text
+        await this.sleep(500)
         await this.sendKeys({
           target,
           keys: 'Enter',
