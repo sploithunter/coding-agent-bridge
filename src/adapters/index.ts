@@ -6,3 +6,4 @@
 
 export { ClaudeAdapter } from './ClaudeAdapter.js'
 export { CodexAdapter } from './CodexAdapter.js'
+export { OpenClawAdapter } from './OpenClawAdapter.js'

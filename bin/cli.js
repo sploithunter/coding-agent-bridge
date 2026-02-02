@@ -137,6 +137,7 @@ async function main() {
     const { EventProcessor } = await import(join(packageDir, 'dist', 'EventProcessor.js'))
     const { ClaudeAdapter } = await import(join(packageDir, 'dist', 'adapters', 'ClaudeAdapter.js'))
     const { CodexAdapter } = await import(join(packageDir, 'dist', 'adapters', 'CodexAdapter.js'))
+    const { OpenClawAdapter } = await import(join(packageDir, 'dist', 'adapters', 'OpenClawAdapter.js'))
 
     const dataDir = options.dataDir || join(homedir(), '.coding-agent-bridge')
     const installer = new HookInstaller({ dataDir, debug: options.debug })
@@ -162,6 +163,7 @@ async function main() {
           EventProcessor,
           ClaudeAdapter,
           CodexAdapter,
+          OpenClawAdapter,
           installer,
           dataDir,
         })
@@ -333,6 +335,7 @@ async function runServer(ctx) {
     EventProcessor,
     ClaudeAdapter,
     CodexAdapter,
+    OpenClawAdapter,
     installer,
     dataDir,
   } = ctx
@@ -352,6 +355,7 @@ async function runServer(ctx) {
   })
   manager.registerAdapter(ClaudeAdapter)
   manager.registerAdapter(CodexAdapter)
+  manager.registerAdapter(OpenClawAdapter)
 
   // Create event processor
   const processor = new EventProcessor({ debug: options.debug })
