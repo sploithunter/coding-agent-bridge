@@ -93,6 +93,8 @@ export interface CreateSessionOptions {
   agent?: AgentType
   /** Agent-specific flags */
   flags?: Record<string, boolean | string>
+  /** Spawn a visible terminal window (Linux only) */
+  spawnTerminal?: boolean
 }
 
 /**

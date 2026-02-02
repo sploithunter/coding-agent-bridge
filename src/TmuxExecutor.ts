@@ -88,6 +88,8 @@ export interface TmuxExecutorOptions {
   debug?: boolean
   /** Custom logger */
   logger?: (message: string) => void
+  /** Default terminal emulator for spawning visible terminals (auto-detect if not specified) */
+  terminalEmulator?: string
 }
 
 export interface SendKeysOptions {
@@ -124,10 +126,12 @@ export interface PasteBufferOptions {
 export class TmuxExecutor {
   private debug: boolean
   private log: (message: string) => void
+  private terminalEmulator?: string
 
   constructor(options: TmuxExecutorOptions = {}) {
     this.debug = options.debug ?? false
     this.log = options.logger ?? ((msg) => console.log(`[TmuxExecutor] ${msg}`))
+    this.terminalEmulator = options.terminalEmulator
   }
 
   /**
@@ -465,6 +469,105 @@ export class TmuxExecutor {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  /**
+   * Detect available terminal emulator on Linux.
+   */
+  async detectTerminalEmulator(): Promise<string | null> {
+    if (this.terminalEmulator) {
+      return this.terminalEmulator
+    }
+
+    // Try common Linux terminal emulators in order of preference
+    const terminals = [
+      'gnome-terminal',
+      'konsole',
+      'xfce4-terminal',
+      'xterm',
+      'alacritty',
+      'kitty',
+      'terminator',
+    ]
+
+    for (const terminal of terminals) {
+      try {
+        await execAsync(`which ${terminal}`)
+        if (this.debug) {
+          this.log(`Detected terminal emulator: ${terminal}`)
+        }
+        return terminal
+      } catch {
+        // Terminal not found, try next
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Spawn a visible terminal window attached to a tmux session.
+   * Linux only - spawns a new terminal emulator window.
+   */
+  async spawnVisibleTerminal(sessionName: string): Promise<void> {
+    validateSessionName(sessionName)
+
+    // Only works on Linux
+    if (process.platform !== 'linux') {
+      if (this.debug) {
+        this.log('spawnVisibleTerminal only supported on Linux')
+      }
+      return
+    }
+
+    const terminal = await this.detectTerminalEmulator()
+    if (!terminal) {
+      throw new Error('No terminal emulator found. Install gnome-terminal, xterm, or similar.')
+    }
+
+    const args: string[] = []
+    const attachCommand = `tmux attach -t ${sessionName}`
+
+    // Build terminal-specific command
+    switch (terminal) {
+      case 'gnome-terminal':
+        args.push('--', 'bash', '-c', attachCommand)
+        break
+      case 'konsole':
+        args.push('-e', attachCommand)
+        break
+      case 'xfce4-terminal':
+        args.push('-e', attachCommand)
+        break
+      case 'xterm':
+        args.push('-e', attachCommand)
+        break
+      case 'alacritty':
+        args.push('-e', 'bash', '-c', attachCommand)
+        break
+      case 'kitty':
+        args.push('bash', '-c', attachCommand)
+        break
+      case 'terminator':
+        args.push('-e', attachCommand)
+        break
+      default:
+        // Generic approach
+        args.push('-e', attachCommand)
+    }
+
+    if (this.debug) {
+      this.log(`Spawning terminal: ${terminal} ${args.join(' ')}`)
+    }
+
+    // Spawn the terminal (detached, don't wait for it)
+    spawn(terminal, args, {
+      detached: true,
+      stdio: 'ignore',
+    }).unref()
+
+    // Give terminal time to open
+    await this.sleep(500)
   }
 }
 

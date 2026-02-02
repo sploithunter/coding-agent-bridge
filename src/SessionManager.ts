@@ -41,6 +41,8 @@ export interface SessionManagerConfig {
   trackExternalSessions: boolean
   /** Enable debug logging */
   debug?: boolean
+  /** Spawn visible terminal windows by default (Linux only) */
+  spawnTerminalByDefault?: boolean
 }
 
 export interface SessionManagerEvents {
@@ -147,6 +149,19 @@ export class SessionManager extends EventEmitter {
       cwd,
       command,
     })
+
+    // Spawn visible terminal if requested
+    const shouldSpawnTerminal = options.spawnTerminal ?? this.config.spawnTerminalByDefault ?? false
+    if (shouldSpawnTerminal && process.platform === 'linux') {
+      try {
+        await this.tmux.spawnVisibleTerminal(tmuxSessionName)
+      } catch (err) {
+        // Log error but don't fail session creation
+        if (this.config.debug) {
+          console.error('[SessionManager] Failed to spawn terminal:', err)
+        }
+      }
+    }
 
     // Create the session object
     const session: Session = {
