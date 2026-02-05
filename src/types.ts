@@ -12,7 +12,7 @@
 /**
  * Supported agent types. Can be extended with custom adapters.
  */
-export type AgentType = 'claude' | 'codex' | string
+export type AgentType = 'claude' | 'codex' | 'cursor' | string
 
 // =============================================================================
 // Session Types

@@ -148,6 +148,7 @@ export type {
 
 export { ClaudeAdapter } from './adapters/ClaudeAdapter.js'
 export { CodexAdapter } from './adapters/CodexAdapter.js'
+export { CursorAdapter } from './adapters/CursorAdapter.js'
 
 // =============================================================================
 // Installation & CLI
