@@ -63,6 +63,8 @@ export type {
   SessionEndEvent,
   UserPromptSubmitEvent,
   NotificationEvent,
+  ContentBlock,
+  AssistantMessageEvent,
   AgentEvent,
 
   // Configuration
@@ -130,6 +132,16 @@ export type {
   EventProcessorEvents,
   ProcessedEvent,
 } from './EventProcessor.js'
+
+export {
+  TranscriptWatcher,
+  createTranscriptWatcher,
+} from './TranscriptWatcher.js'
+
+export type {
+  TranscriptWatcherOptions,
+  TranscriptWatcherEvents,
+} from './TranscriptWatcher.js'
 
 export {
   BridgeServer,

@@ -17,10 +17,13 @@ import type {
   CreateSessionOptions,
   SessionFilter,
   AgentType,
+  AgentEvent,
+  AssistantMessageEvent,
   TerminalInfo,
   AgentAdapter,
 } from './types.js'
 import { TmuxExecutor } from './TmuxExecutor.js'
+import { TranscriptWatcher } from './TranscriptWatcher.js'
 
 // =============================================================================
 // Types
@@ -50,6 +53,7 @@ export interface SessionManagerEvents {
   'session:updated': (session: Session, changes: Partial<Session>) => void
   'session:deleted': (session: Session) => void
   'session:status': (session: Session, from: SessionStatus, to: SessionStatus) => void
+  event: (event: AgentEvent) => void
   error: (error: Error) => void
 }
 
@@ -66,6 +70,7 @@ interface PersistedState {
 export class SessionManager extends EventEmitter {
   private sessions: Map<string, Session> = new Map()
   private agentToManagedMap: Map<string, string> = new Map()
+  private transcriptWatchers: Map<string, TranscriptWatcher> = new Map()
   private sessionCounter = 0
   private adapters: Map<string, AgentAdapter> = new Map()
   private tmux: TmuxExecutor
@@ -94,10 +99,17 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Stop the session manager (save state, stop health checks).
+   * Stop the session manager (save state, stop health checks, stop watchers).
    */
   async stop(): Promise<void> {
     this.stopHealthChecks()
+
+    // Stop all transcript watchers
+    for (const [sessionId, watcher] of this.transcriptWatchers) {
+      await watcher.stop()
+      this.transcriptWatchers.delete(sessionId)
+    }
+
     await this.save()
   }
 
@@ -253,6 +265,9 @@ export class SessionManager extends EventEmitter {
       })
     }
 
+    // Stop transcript watcher
+    await this.stopTranscriptWatcher(id)
+
     // Remove from maps
     this.sessions.delete(id)
 
@@ -393,7 +408,8 @@ export class SessionManager extends EventEmitter {
     agentSessionId: string,
     agent: AgentType,
     cwd: string,
-    terminal?: TerminalInfo
+    terminal?: TerminalInfo,
+    transcriptPath?: string
   ): Session {
     // Check if we already have a mapping
     const existingId = this.agentToManagedMap.get(agentSessionId)
@@ -403,6 +419,11 @@ export class SessionManager extends EventEmitter {
         // Update terminal info if provided
         if (terminal) {
           session.terminal = terminal
+        }
+        // Start transcript watcher if we have a new path
+        if (transcriptPath && !session.transcriptPath) {
+          session.transcriptPath = transcriptPath
+          this.startTranscriptWatcher(session)
         }
         return session
       }
@@ -424,6 +445,10 @@ export class SessionManager extends EventEmitter {
         if (terminal) {
           session.terminal = terminal
         }
+        if (transcriptPath) {
+          session.transcriptPath = transcriptPath
+          this.startTranscriptWatcher(session)
+        }
         this.markDirty()
         return session
       }
@@ -432,7 +457,7 @@ export class SessionManager extends EventEmitter {
     // No match - create external session if tracking is enabled
     if (!this.config.trackExternalSessions) {
       // Return a temporary session object (not persisted)
-      return {
+      const tempSession: Session = {
         id: randomUUID(),
         name: basename(cwd) || 'external',
         type: 'external',
@@ -443,7 +468,12 @@ export class SessionManager extends EventEmitter {
         lastActivity: Date.now(),
         agentSessionId,
         terminal,
+        transcriptPath,
       }
+      if (transcriptPath) {
+        this.startTranscriptWatcher(tempSession)
+      }
+      return tempSession
     }
 
     // Create external session
@@ -459,12 +489,17 @@ export class SessionManager extends EventEmitter {
       lastActivity: Date.now(),
       agentSessionId,
       terminal,
+      transcriptPath,
     }
 
     this.sessions.set(id, session)
     this.agentToManagedMap.set(agentSessionId, id)
     this.markDirty()
     this.emit('session:created', session)
+
+    if (transcriptPath) {
+      this.startTranscriptWatcher(session)
+    }
 
     return session
   }
@@ -512,6 +547,64 @@ export class SessionManager extends EventEmitter {
     session.currentTool = tool
     session.lastActivity = Date.now()
     this.markDirty()
+  }
+
+  // ===========================================================================
+  // Transcript Watchers
+  // ===========================================================================
+
+  /**
+   * Start a transcript watcher for a session.
+   */
+  private startTranscriptWatcher(session: Session): void {
+    if (!session.transcriptPath) return
+    if (this.transcriptWatchers.has(session.id)) return
+
+    const adapter = this.adapters.get(session.agent)
+    if (!adapter?.parseTranscriptEntry) return
+
+    const watcher = new TranscriptWatcher(session.transcriptPath, adapter, {
+      debug: this.config.debug,
+    })
+
+    watcher.on('message', (partial: Partial<AssistantMessageEvent>) => {
+      // Complete the event with session info
+      const event: AssistantMessageEvent = {
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        timestamp: partial.timestamp ?? Date.now(),
+        type: 'assistant_message',
+        sessionId: session.id,
+        agentSessionId: session.agentSessionId,
+        agent: session.agent,
+        cwd: session.cwd,
+        content: partial.content ?? [],
+        requestId: partial.requestId,
+        isPreamble: partial.isPreamble ?? false,
+      }
+
+      session.lastActivity = Date.now()
+      this.emit('event', event)
+    })
+
+    watcher.on('error', (err: Error) => {
+      this.emit('error', err)
+    })
+
+    this.transcriptWatchers.set(session.id, watcher)
+    watcher.start().catch((err: unknown) => {
+      this.emit('error', err instanceof Error ? err : new Error(String(err)))
+    })
+  }
+
+  /**
+   * Stop a transcript watcher for a session.
+   */
+  private async stopTranscriptWatcher(sessionId: string): Promise<void> {
+    const watcher = this.transcriptWatchers.get(sessionId)
+    if (watcher) {
+      await watcher.stop()
+      this.transcriptWatchers.delete(sessionId)
+    }
   }
 
   // ===========================================================================

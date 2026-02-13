@@ -79,6 +79,9 @@ export interface Session {
   // Current state
   /** Currently executing tool, if any */
   currentTool?: string
+
+  /** Path to the agent's transcript JSONL file */
+  transcriptPath?: string
 }
 
 /**
@@ -127,6 +130,7 @@ export type EventType =
   | 'session_end'
   | 'user_prompt_submit'
   | 'notification'
+  | 'assistant_message'
 
 /**
  * Base event interface shared by all events.
@@ -243,6 +247,35 @@ export interface NotificationEvent extends BaseEvent {
 }
 
 /**
+ * Content block from assistant output (text, thinking, or tool_use).
+ */
+export interface ContentBlock {
+  /** Block type */
+  type: 'text' | 'thinking' | 'tool_use'
+  /** Text content (for text and thinking blocks) */
+  text?: string
+  /** Tool name (for tool_use blocks) */
+  toolName?: string
+  /** Tool input (for tool_use blocks) */
+  toolInput?: Record<string, unknown>
+  /** Tool use ID (for tool_use blocks) */
+  toolUseId?: string
+}
+
+/**
+ * Assistant message event - extracted from transcript JSONL.
+ */
+export interface AssistantMessageEvent extends BaseEvent {
+  type: 'assistant_message'
+  /** Content blocks from the assistant's response */
+  content: ContentBlock[]
+  /** API request ID for grouping blocks from the same response */
+  requestId?: string
+  /** Whether this is a whitespace-only preamble message */
+  isPreamble: boolean
+}
+
+/**
  * Union type of all event types.
  */
 export type AgentEvent =
@@ -254,6 +287,7 @@ export type AgentEvent =
   | SessionEndEvent
   | UserPromptSubmitEvent
   | NotificationEvent
+  | AssistantMessageEvent
 
 // =============================================================================
 // Configuration
@@ -392,6 +426,13 @@ export interface AgentAdapter {
    * @returns True if the agent CLI is installed and accessible
    */
   isAvailable(): Promise<boolean>
+
+  /**
+   * Parse a transcript JSONL entry into an assistant message event.
+   * @param entry Parsed JSON object from the transcript file
+   * @returns Partial AssistantMessageEvent or null if not an assistant message
+   */
+  parseTranscriptEntry?(entry: unknown): Partial<AssistantMessageEvent> | null
 }
 
 // =============================================================================

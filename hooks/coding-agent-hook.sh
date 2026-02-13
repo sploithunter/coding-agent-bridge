@@ -18,7 +18,7 @@ set -euo pipefail
 # =============================================================================
 
 # Data directory - can be overridden via environment
-BRIDGE_DATA_DIR="${CODING_AGENT_BRIDGE_DATA_DIR:-$HOME/.coding-agent-bridge}"
+BRIDGE_DATA_DIR="${CODING_AGENT_BRIDGE_DATA_DIR:-$HOME/.cin-interface}"
 EVENTS_FILE="${BRIDGE_DATA_DIR}/data/events.jsonl"
 SERVER_URL="${CODING_AGENT_BRIDGE_SERVER:-http://localhost:4003}"
 DEBUG="${CODING_AGENT_BRIDGE_DEBUG:-}"
@@ -118,9 +118,10 @@ main() {
   debug_log "TMUX: $tmux_socket"
   debug_log "TTY: $terminal_tty"
 
-  # Extract session ID and cwd from input
+  # Extract session ID, cwd, and transcript_path from input
   session_id=$($JQ -r '.session_id // .thread_id // empty' <<< "$input" 2>/dev/null || echo "")
   cwd=$($JQ -r '.cwd // empty' <<< "$input" 2>/dev/null || echo "$PWD")
+  transcript_path=$($JQ -r '.transcript_path // empty' <<< "$input" 2>/dev/null || echo "")
 
   # Detect agent type
   agent="claude"
@@ -131,6 +132,7 @@ main() {
   debug_log "Agent: $agent"
   debug_log "Session ID: $session_id"
   debug_log "CWD: $cwd"
+  debug_log "Transcript path: $transcript_path"
 
   # Generate unique event ID and timestamp
   event_id=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "evt-$(date +%s)-$$")
@@ -141,12 +143,15 @@ main() {
   case "$hook_name" in
     PreToolUse)     event_type="pre_tool_use" ;;
     PostToolUse)    event_type="post_tool_use" ;;
+    PostToolUseFailure) event_type="post_tool_use" ;;
     Stop)           event_type="stop" ;;
     SubagentStop)   event_type="subagent_stop" ;;
+    SubagentStart)  event_type="notification" ;;
     SessionStart)   event_type="session_start" ;;
     SessionEnd)     event_type="session_end" ;;
     UserPromptSubmit) event_type="user_prompt_submit" ;;
     Notification)   event_type="notification" ;;
+    PreCompact)     event_type="notification" ;;
     notify)
       # Codex notify - extract event type from payload
       codex_type=$($JQ -r '.event_type // "notification"' <<< "$input" 2>/dev/null || echo "notification")
@@ -175,14 +180,18 @@ main() {
     --arg tmuxPane "$tmux_pane" \
     --arg tmuxSocket "$tmux_socket" \
     --arg tty "$terminal_tty" \
+    --arg hookEventName "$hook_name" \
+    --arg transcriptPath "$transcript_path" \
     --argjson raw "$input" \
-    '{
+    '$raw + {
       id: $id,
       timestamp: ($timestamp | tonumber),
       type: $type,
+      hook_event_name: $hookEventName,
       sessionId: $sessionId,
       agent: $agent,
       cwd: $cwd,
+      transcript_path: (if $transcriptPath != "" then $transcriptPath else null end),
       terminal: (
         if ($tmuxPane != "" or $tmuxSocket != "" or $tty != "") then
           {
@@ -192,7 +201,7 @@ main() {
           }
         else null end
       )
-    } + $raw'
+    }'
   )
 
   debug_log "Event: $event"

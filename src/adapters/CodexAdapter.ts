@@ -263,4 +263,9 @@ export const CodexAdapter: AgentAdapter = {
       return false
     }
   },
+
+  parseTranscriptEntry(): null {
+    // Codex gets response text from hooks directly, no transcript parsing needed
+    return null
+  },
 }

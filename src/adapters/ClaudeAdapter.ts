@@ -8,6 +8,8 @@ import type {
   AgentAdapter,
   AgentCommandOptions,
   AgentEvent,
+  AssistantMessageEvent,
+  ContentBlock,
   HookConfig,
   PreToolUseEvent,
   PostToolUseEvent,
@@ -79,6 +81,25 @@ interface ClaudeHookData {
   source?: string
   message?: string
   level?: string
+  prompt?: string
+}
+
+/**
+ * Transcript entry from Claude Code's JSONL transcript file.
+ */
+interface ClaudeTranscriptEntry {
+  type: string
+  message?: {
+    id?: string
+    content?: Array<{
+      type: string
+      text?: string
+      name?: string
+      input?: Record<string, unknown>
+      id?: string
+    }>
+  }
+  requestId?: string
 }
 
 /**
@@ -205,6 +226,7 @@ export const ClaudeAdapter: AgentAdapter = {
         const event: Partial<UserPromptSubmitEvent> = {
           ...baseEvent,
           type: 'user_prompt_submit',
+          prompt: (d.prompt as string | undefined) ?? (d.message as string | undefined),
         }
         return event
       }
@@ -320,6 +342,56 @@ export const ClaudeAdapter: AgentAdapter = {
       return true
     } catch {
       return false
+    }
+  },
+
+  parseTranscriptEntry(entry: unknown): Partial<AssistantMessageEvent> | null {
+    if (!entry || typeof entry !== 'object') return null
+
+    const e = entry as ClaudeTranscriptEntry
+    if (e.type !== 'assistant') return null
+
+    const messageContent = e.message?.content
+    if (!Array.isArray(messageContent) || messageContent.length === 0) return null
+
+    // Convert Claude content blocks to our ContentBlock format
+    const content: ContentBlock[] = []
+    for (const block of messageContent) {
+      switch (block.type) {
+        case 'text':
+          content.push({ type: 'text', text: block.text ?? '' })
+          break
+        case 'thinking':
+          content.push({ type: 'thinking', text: block.text ?? '' })
+          break
+        case 'tool_use':
+          content.push({
+            type: 'tool_use',
+            toolName: block.name,
+            toolInput: block.input,
+            toolUseId: block.id,
+          })
+          break
+        // Skip other block types (tool_result, etc.)
+      }
+    }
+
+    if (content.length === 0) return null
+
+    // Detect preamble: all text blocks contain only whitespace
+    const textBlocks = content.filter((b) => b.type === 'text')
+    const isPreamble =
+      textBlocks.length > 0 &&
+      content.every((b) => b.type !== 'tool_use') &&
+      textBlocks.every((b) => !b.text || b.text.trim() === '')
+
+    return {
+      type: 'assistant_message',
+      agent: 'claude',
+      content,
+      requestId: e.requestId ?? e.message?.id,
+      isPreamble,
+      timestamp: Date.now(),
     }
   },
 }

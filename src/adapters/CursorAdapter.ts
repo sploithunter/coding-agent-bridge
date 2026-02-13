@@ -297,4 +297,9 @@ export const CursorAdapter: AgentAdapter = {
       return false
     }
   },
+
+  parseTranscriptEntry(): null {
+    // Cursor gets response text from hooks directly, no transcript parsing needed
+    return null
+  },
 }

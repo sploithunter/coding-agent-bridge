@@ -408,6 +408,37 @@ describe('EventProcessor', () => {
     })
   })
 
+  describe('transcript path extraction', () => {
+    it('should extract transcript_path from raw event', () => {
+      const line = JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        session_id: 'session-123',
+        cwd: '/tmp/project',
+        tool_name: 'Bash',
+        tool_input: { command: 'ls' },
+        transcript_path: '/home/user/.claude/projects/test/abc123.jsonl',
+      })
+
+      const result = processor.processLine(line)
+
+      expect(result).not.toBeNull()
+      expect(result?.transcriptPath).toBe('/home/user/.claude/projects/test/abc123.jsonl')
+    })
+
+    it('should have undefined transcriptPath when not present', () => {
+      const line = JSON.stringify({
+        hook_event_name: 'Stop',
+        session_id: 'session-123',
+        cwd: '/tmp',
+      })
+
+      const result = processor.processLine(line)
+
+      expect(result).not.toBeNull()
+      expect(result?.transcriptPath).toBeUndefined()
+    })
+  })
+
   describe('registerAdapter', () => {
     it('should register custom adapter', () => {
       const customAdapter = {

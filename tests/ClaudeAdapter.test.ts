@@ -218,4 +218,179 @@ describe('ClaudeAdapter', () => {
       expect(path).toContain('settings.json')
     })
   })
+
+  describe('parseTranscriptEntry', () => {
+    it('should return null for non-object input', () => {
+      expect(ClaudeAdapter.parseTranscriptEntry!(null)).toBeNull()
+      expect(ClaudeAdapter.parseTranscriptEntry!(undefined)).toBeNull()
+      expect(ClaudeAdapter.parseTranscriptEntry!('string')).toBeNull()
+    })
+
+    it('should return null for non-assistant entries', () => {
+      expect(ClaudeAdapter.parseTranscriptEntry!({ type: 'user' })).toBeNull()
+      expect(ClaudeAdapter.parseTranscriptEntry!({ type: 'system' })).toBeNull()
+    })
+
+    it('should return null for assistant entries with no content', () => {
+      expect(ClaudeAdapter.parseTranscriptEntry!({ type: 'assistant', message: {} })).toBeNull()
+      expect(ClaudeAdapter.parseTranscriptEntry!({ type: 'assistant', message: { content: [] } })).toBeNull()
+    })
+
+    it('should parse text content blocks', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-1',
+          content: [{ type: 'text', text: 'Hello world' }],
+        },
+        requestId: 'req-1',
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      expect(event).not.toBeNull()
+      expect(event?.type).toBe('assistant_message')
+      expect(event?.content).toHaveLength(1)
+      expect(event?.content?.[0]?.type).toBe('text')
+      expect(event?.content?.[0]?.text).toBe('Hello world')
+      expect(event?.requestId).toBe('req-1')
+      expect(event?.isPreamble).toBe(false)
+    })
+
+    it('should parse thinking content blocks', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-2',
+          content: [
+            { type: 'thinking', text: 'Let me consider...' },
+            { type: 'text', text: 'My answer.' },
+          ],
+        },
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      expect(event?.content).toHaveLength(2)
+      expect(event?.content?.[0]?.type).toBe('thinking')
+      expect(event?.content?.[0]?.text).toBe('Let me consider...')
+      expect(event?.content?.[1]?.type).toBe('text')
+    })
+
+    it('should parse tool_use content blocks', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-3',
+          content: [
+            { type: 'tool_use', name: 'Bash', input: { command: 'ls' }, id: 'tu-1' },
+          ],
+        },
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      expect(event?.content).toHaveLength(1)
+      expect(event?.content?.[0]?.type).toBe('tool_use')
+      expect(event?.content?.[0]?.toolName).toBe('Bash')
+      expect(event?.content?.[0]?.toolInput).toEqual({ command: 'ls' })
+      expect(event?.content?.[0]?.toolUseId).toBe('tu-1')
+      expect(event?.isPreamble).toBe(false)
+    })
+
+    it('should detect whitespace-only preamble', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-4',
+          content: [{ type: 'text', text: '  \n\t  ' }],
+        },
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      expect(event?.isPreamble).toBe(true)
+    })
+
+    it('should not mark non-whitespace text as preamble', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-5',
+          content: [{ type: 'text', text: 'Some content here' }],
+        },
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      expect(event?.isPreamble).toBe(false)
+    })
+
+    it('should not mark tool_use entries as preamble', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-6',
+          content: [
+            { type: 'text', text: '' },
+            { type: 'tool_use', name: 'Read', input: {}, id: 'tu-2' },
+          ],
+        },
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      expect(event?.isPreamble).toBe(false)
+    })
+
+    it('should use message.id as requestId fallback', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-fallback',
+          content: [{ type: 'text', text: 'Hello' }],
+        },
+        // No requestId field
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      expect(event?.requestId).toBe('msg-fallback')
+    })
+
+    it('should skip unknown block types', () => {
+      const entry = {
+        type: 'assistant',
+        message: {
+          id: 'msg-7',
+          content: [
+            { type: 'tool_result', content: 'file contents' },
+            { type: 'text', text: 'Result above' },
+          ],
+        },
+      }
+
+      const event = ClaudeAdapter.parseTranscriptEntry!(entry)
+      // tool_result should be skipped, only text remains
+      expect(event?.content).toHaveLength(1)
+      expect(event?.content?.[0]?.type).toBe('text')
+    })
+  })
+
+  describe('parseHookEvent - user_prompt_submit', () => {
+    it('should extract prompt field from UserPromptSubmit data', () => {
+      const data = {
+        session_id: 'test-session',
+        cwd: '/tmp',
+        prompt: 'Write a function to sort an array',
+      }
+      const event = ClaudeAdapter.parseHookEvent('UserPromptSubmit', data)
+      expect(event).not.toBeNull()
+      expect(event?.type).toBe('user_prompt_submit')
+      expect((event as any).prompt).toBe('Write a function to sort an array')
+    })
+
+    it('should fall back to message field for prompt', () => {
+      const data = {
+        session_id: 'test-session',
+        cwd: '/tmp',
+        message: 'Prompt from message field',
+      }
+      const event = ClaudeAdapter.parseHookEvent('UserPromptSubmit', data)
+      expect((event as any).prompt).toBe('Prompt from message field')
+    })
+  })
 })

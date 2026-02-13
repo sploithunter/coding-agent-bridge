@@ -47,6 +47,8 @@ export interface ProcessedEvent {
   terminal?: TerminalInfo
   /** Working directory */
   cwd?: string
+  /** Path to the agent's transcript JSONL file */
+  transcriptPath?: string
 }
 
 export interface EventProcessorEvents {
@@ -92,6 +94,9 @@ interface RawHookEvent {
   tool?: string
   input?: unknown
   output?: unknown
+
+  // Transcript
+  transcript_path?: string
 
   // Catch-all for other fields
   [key: string]: unknown
@@ -205,12 +210,16 @@ export class EventProcessor extends EventEmitter {
       // Extract cwd
       const cwd = raw.cwd || raw.working_directory
 
+      // Extract transcript path
+      const transcriptPath = raw.transcript_path
+
       const processed: ProcessedEvent = {
         event,
         agentSessionId,
         agent,
         terminal,
         cwd,
+        transcriptPath,
       }
 
       this.trace('  SUCCESS:', event.type, 'from', agent, 'session', agentSessionId)
