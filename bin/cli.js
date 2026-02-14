@@ -395,6 +395,9 @@ async function runServer(ctx) {
         processed.terminal
       )
       if (session) {
+        // Enrich event with bridge session ID for client correlation
+        processed.event.sessionId = session.id
+
         if (processed.event.type === 'stop' || processed.event.type === 'session_end') {
           manager.updateSessionStatus(session, 'idle')
         } else if (processed.event.type === 'pre_tool_use' || processed.event.type === 'user_prompt_submit') {

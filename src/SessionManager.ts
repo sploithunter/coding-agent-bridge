@@ -429,9 +429,10 @@ export class SessionManager extends EventEmitter {
       }
     }
 
-    // Try to find an internal session with matching cwd that was just created
-    // (within last 30 seconds) and doesn't have an agent session ID yet
-    const recentThreshold = Date.now() - 30000
+    // Try to find an internal session with matching cwd that was recently created
+    // and doesn't have an agent session ID yet. Window is generous (5 min) because
+    // agents can take a while to initialize before firing their first event.
+    const recentThreshold = Date.now() - 300000
     for (const session of this.sessions.values()) {
       if (
         session.type === 'internal' &&
