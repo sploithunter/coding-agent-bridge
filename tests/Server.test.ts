@@ -2,6 +2,7 @@
  * Unit tests for BridgeServer
  */
 
+import { createServer as createHttpServer } from 'http'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { BridgeServer } from '../src/Server.js'
 import { SessionManager } from '../src/SessionManager.js'
@@ -95,6 +96,32 @@ describe('BridgeServer', () => {
       await server.start() // Should not throw
 
       expect(true).toBe(true)
+    })
+
+    it('should reject with EADDRINUSE when port is taken and allow retry', async () => {
+      // Block the port with a plain HTTP server
+      const blocker = createHttpServer((_, res) => res.end('x'))
+      await new Promise<void>((resolve) =>
+        blocker.listen(testPort, '127.0.0.1', resolve)
+      )
+
+      try {
+        // First attempt should reject cleanly
+        await expect(server.start()).rejects.toThrow(/EADDRINUSE/)
+
+        // Free the port
+        await new Promise<void>((resolve) => blocker.close(() => resolve()))
+
+        // Retry should succeed (instance must not be stuck)
+        await server.start()
+
+        // Verify the server is actually working
+        const res = await fetch(`http://127.0.0.1:${testPort}/health`)
+        expect(res.status).toBe(200)
+      } finally {
+        // Ensure blocker is closed even on test failure
+        blocker.close()
+      }
     })
   })
 

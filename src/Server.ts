@@ -135,21 +135,38 @@ export class BridgeServer extends EventEmitter {
       return
     }
 
-    this.httpServer = createHttpServer((req, res) => {
+    const httpServer = createHttpServer((req, res) => {
       this.handleRequest(req, res)
     })
 
     // Set up WebSocket server
-    this.wss = new WebSocketServer({ server: this.httpServer as HttpServer })
+    const wss = new WebSocketServer({ server: httpServer })
 
-    this.wss.on('connection', (ws, req) => {
+    wss.on('connection', (ws, req) => {
       this.handleWebSocketConnection(ws, req)
     })
 
     // Start listening
-    return new Promise((resolve, reject) => {
-      this.httpServer!.once('error', reject)
-      this.httpServer!.listen(this.config.port, this.config.host, () => {
+    return new Promise<void>((resolve, reject) => {
+      const onError = (err: Error) => {
+        // Clean up so start() can be retried
+        wss.close()
+        httpServer.close()
+        reject(err)
+      }
+
+      httpServer.once('error', onError)
+      wss.once('error', onError)
+
+      httpServer.listen(this.config.port, this.config.host, () => {
+        // Remove startup error handlers; runtime errors go through the emitter
+        httpServer.removeListener('error', onError)
+        wss.removeListener('error', onError)
+
+        // Assign only after successful bind
+        this.httpServer = httpServer
+        this.wss = wss
+
         this.debug('Server listening on', this.config.host, ':', this.config.port)
         this.emit('listening', this.config.port, this.config.host)
         resolve()
