@@ -104,9 +104,10 @@ main() {
   debug_log "Input: $input"
 
   # Detect which agent called us based on environment and input
-  # Claude Code sets CLAUDE_CODE_HOOK_NAME
-  # Codex may set CODEX_HOOK or similar
-  hook_name="${CLAUDE_CODE_HOOK_NAME:-${CODEX_HOOK:-notify}}"
+  # Claude Code sets CLAUDE_CODE_HOOK_NAME (may be unset in some versions)
+  # Fall back to hook_event_name from the JSON payload, then CODEX_HOOK
+  json_hook_name=$($JQ -r '.hook_event_name // empty' <<< "$input" 2>/dev/null || echo "")
+  hook_name="${CLAUDE_CODE_HOOK_NAME:-${json_hook_name:-${CODEX_HOOK:-notify}}}"
   debug_log "Hook name: $hook_name"
 
   # Capture terminal info from environment
@@ -136,7 +137,12 @@ main() {
 
   # Generate unique event ID and timestamp
   event_id=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "evt-$(date +%s)-$$")
-  timestamp=$(date +%s%3N 2>/dev/null || echo "$(date +%s)000")
+  # macOS `date +%s%3N` outputs literal "N" - use python3 for milliseconds
+  if timestamp=$(python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null); then
+    :
+  else
+    timestamp="$(date +%s)000"
+  fi
 
   # Map hook name to event type
   event_type=""
@@ -169,8 +175,8 @@ main() {
 
   debug_log "Event type: $event_type"
 
-  # Build the event JSON
-  event=$($JQ -n \
+  # Build the event JSON (compact single-line for JSONL)
+  event=$($JQ -c -n \
     --arg id "$event_id" \
     --arg timestamp "$timestamp" \
     --arg type "$event_type" \
