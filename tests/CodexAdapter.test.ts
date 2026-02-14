@@ -26,11 +26,34 @@ describe('CodexAdapter', () => {
       expect(cmd).toBe('codex')
     })
 
-    it('should add custom flags', () => {
+    it('should add custom flags with shell quoting', () => {
       const cmd = CodexAdapter.buildCommand({
         flags: { 'model': 'gpt-4' },
       })
-      expect(cmd).toContain('--model=gpt-4')
+      expect(cmd).toContain("--model='gpt-4'")
+    })
+
+    it('should prevent command injection via semicolons in flag values', () => {
+      const cmd = CodexAdapter.buildCommand({
+        flags: { 'model': 'x; touch /tmp/bridge-rce' },
+      })
+      expect(cmd).not.toMatch(/--model=x;/)
+      expect(cmd).toContain("--model='x; touch /tmp/bridge-rce'")
+    })
+
+    it('should prevent command injection via $() in flag values', () => {
+      const cmd = CodexAdapter.buildCommand({
+        flags: { 'model': '$(rm -rf /)' },
+      })
+      expect(cmd).toContain("--model='$(rm -rf /)'")
+    })
+
+    it('should reject flag keys with shell metacharacters', () => {
+      expect(() =>
+        CodexAdapter.buildCommand({
+          flags: { 'model;rm -rf /': 'value' },
+        })
+      ).toThrow(/Invalid flag key/)
     })
   })
 

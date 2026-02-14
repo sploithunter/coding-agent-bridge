@@ -24,6 +24,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
 import { randomUUID } from 'crypto'
+import { buildSafeFlag } from '../utils/shellQuote.js'
 
 const execAsync = promisify(exec)
 
@@ -107,12 +108,8 @@ export const CursorAdapter: AgentAdapter = {
     const parts = ['cursor-agent']
 
     for (const [key, value] of Object.entries(flags)) {
-      if (value === false) continue
-      if (value === true) {
-        parts.push(`--${key}`)
-      } else {
-        parts.push(`--${key}=${value}`)
-      }
+      const flag = buildSafeFlag(key, value)
+      if (flag) parts.push(flag)
     }
 
     return parts.join(' ')
