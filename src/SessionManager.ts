@@ -434,30 +434,38 @@ export class SessionManager extends EventEmitter {
       }
     }
 
-    // Try to find an internal session with matching cwd that was recently created
-    // and doesn't have an agent session ID yet. Window is generous (5 min) because
-    // agents can take a while to initialize before firing their first event.
+    // Try to find an internal session with matching agent and cwd that was recently
+    // created and doesn't have an agent session ID yet. Window is generous (5 min)
+    // because agents can take a while to initialize before firing their first event.
+    // Pick the newest match to avoid linking to stale sessions.
     const recentThreshold = Date.now() - 300000
+    let bestMatch: Session | undefined
     for (const session of this.sessions.values()) {
       if (
         session.type === 'internal' &&
         !session.agentSessionId &&
+        session.agent === agent &&
         session.cwd === cwd &&
         session.createdAt > recentThreshold
       ) {
-        // Link this session
-        session.agentSessionId = agentSessionId
-        this.agentToManagedMap.set(agentSessionId, session.id)
-        if (terminal) {
-          session.terminal = terminal
+        if (!bestMatch || session.createdAt > bestMatch.createdAt) {
+          bestMatch = session
         }
-        if (transcriptPath) {
-          session.transcriptPath = transcriptPath
-          this.startTranscriptWatcher(session)
-        }
-        this.markDirty()
-        return session
       }
+    }
+    if (bestMatch) {
+      // Link this session
+      bestMatch.agentSessionId = agentSessionId
+      this.agentToManagedMap.set(agentSessionId, bestMatch.id)
+      if (terminal) {
+        bestMatch.terminal = terminal
+      }
+      if (transcriptPath) {
+        bestMatch.transcriptPath = transcriptPath
+        this.startTranscriptWatcher(bestMatch)
+      }
+      this.markDirty()
+      return bestMatch
     }
 
     // No match - create external session if tracking is enabled
