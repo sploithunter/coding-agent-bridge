@@ -250,11 +250,17 @@ export const CursorAdapter: AgentAdapter = {
     }
     const hooks = settings.hooks as Record<string, unknown>
 
-    // Add hook configurations for each hook name
+    // Add hook configurations for each hook name, preserving existing user hooks
     for (const hookName of HOOK_NAMES) {
-      hooks[hookName] = {
+      const bridgeEntry = {
         command: hookScriptPath,
         timeout: 5,
+      }
+
+      const existing = hooks[hookName] as { command?: string } | undefined
+      // Only set if no hook exists or the existing one is ours (dedup)
+      if (!existing || typeof existing !== 'object' || existing.command?.includes('coding-agent-hook')) {
+        hooks[hookName] = bridgeEntry
       }
     }
 
@@ -272,9 +278,12 @@ export const CursorAdapter: AgentAdapter = {
       if (settings.hooks && typeof settings.hooks === 'object') {
         const hooks = settings.hooks as Record<string, unknown>
 
-        // Remove our hook configurations
+        // Remove only bridge hook entries, preserving user hooks
         for (const hookName of HOOK_NAMES) {
-          delete hooks[hookName]
+          const entry = hooks[hookName] as { command?: string } | undefined
+          if (entry && typeof entry === 'object' && entry.command?.includes('coding-agent-hook')) {
+            delete hooks[hookName]
+          }
         }
 
         // Remove hooks object if empty

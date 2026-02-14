@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { ClaudeAdapter } from '../src/adapters/ClaudeAdapter.js'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { mkdir, rm, readFile, writeFile } from 'fs/promises'
+import { randomUUID } from 'crypto'
 
 describe('ClaudeAdapter', () => {
   describe('name and displayName', () => {
@@ -391,6 +395,165 @@ describe('ClaudeAdapter', () => {
       }
       const event = ClaudeAdapter.parseHookEvent('UserPromptSubmit', data)
       expect((event as any).prompt).toBe('Prompt from message field')
+    })
+  })
+
+  describe('installHooks - preserves existing user hooks', () => {
+    let testDir: string
+    let settingsPath: string
+    let origGetSettingsPath: typeof ClaudeAdapter.getSettingsPath
+
+    beforeEach(async () => {
+      testDir = join(tmpdir(), `claude-adapter-test-${randomUUID()}`)
+      await mkdir(testDir, { recursive: true })
+      settingsPath = join(testDir, 'settings.json')
+
+      // Monkey-patch getSettingsPath to use temp dir
+      origGetSettingsPath = ClaudeAdapter.getSettingsPath
+      ClaudeAdapter.getSettingsPath = () => settingsPath
+    })
+
+    afterEach(async () => {
+      ClaudeAdapter.getSettingsPath = origGetSettingsPath
+      await rm(testDir, { recursive: true, force: true })
+    })
+
+    it('should preserve existing user hooks when installing bridge hooks', async () => {
+      // User has pre-existing hooks
+      const existingSettings = {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Bash',
+              hooks: [
+                { type: 'command', command: '/usr/local/bin/my-security-checker.sh', timeout: 10 },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              matcher: '*',
+              hooks: [
+                { type: 'command', command: '/usr/local/bin/my-session-logger.sh', timeout: 5 },
+              ],
+            },
+          ],
+        },
+      }
+      await writeFile(settingsPath, JSON.stringify(existingSettings, null, 2))
+
+      // Install bridge hooks
+      await ClaudeAdapter.installHooks('/path/to/coding-agent-hook.sh')
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+
+      // User's PreToolUse security checker should still be there
+      const preToolUse = result.hooks.PreToolUse
+      expect(preToolUse).toHaveLength(2)
+      expect(preToolUse[0].matcher).toBe('Bash')
+      expect(preToolUse[0].hooks[0].command).toBe('/usr/local/bin/my-security-checker.sh')
+      // Bridge hook appended
+      expect(preToolUse[1].hooks[0].command).toBe('/path/to/coding-agent-hook.sh')
+
+      // User's Stop logger should still be there
+      const stop = result.hooks.Stop
+      expect(stop).toHaveLength(2)
+      expect(stop[0].hooks[0].command).toBe('/usr/local/bin/my-session-logger.sh')
+      expect(stop[1].hooks[0].command).toBe('/path/to/coding-agent-hook.sh')
+    })
+
+    it('should deduplicate bridge hooks on repeated install', async () => {
+      await ClaudeAdapter.installHooks('/path/to/coding-agent-hook.sh')
+      await ClaudeAdapter.installHooks('/path/to/coding-agent-hook.sh')
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+
+      // Each hook name should have exactly one entry (no duplicates)
+      for (const hookName of ['PreToolUse', 'PostToolUse', 'Stop']) {
+        expect(result.hooks[hookName]).toHaveLength(1)
+        expect(result.hooks[hookName][0].hooks[0].command).toBe('/path/to/coding-agent-hook.sh')
+      }
+    })
+
+    it('should work on fresh settings file', async () => {
+      // No existing settings file
+      await ClaudeAdapter.installHooks('/path/to/coding-agent-hook.sh')
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+      expect(result.hooks.PreToolUse).toHaveLength(1)
+      expect(result.hooks.PreToolUse[0].hooks[0].command).toBe('/path/to/coding-agent-hook.sh')
+    })
+  })
+
+  describe('uninstallHooks - preserves existing user hooks', () => {
+    let testDir: string
+    let settingsPath: string
+    let origGetSettingsPath: typeof ClaudeAdapter.getSettingsPath
+
+    beforeEach(async () => {
+      testDir = join(tmpdir(), `claude-adapter-test-${randomUUID()}`)
+      await mkdir(testDir, { recursive: true })
+      settingsPath = join(testDir, 'settings.json')
+
+      origGetSettingsPath = ClaudeAdapter.getSettingsPath
+      ClaudeAdapter.getSettingsPath = () => settingsPath
+    })
+
+    afterEach(async () => {
+      ClaudeAdapter.getSettingsPath = origGetSettingsPath
+      await rm(testDir, { recursive: true, force: true })
+    })
+
+    it('should only remove bridge hooks and preserve user hooks', async () => {
+      // Settings with both user hooks and bridge hooks
+      const settings = {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Bash',
+              hooks: [
+                { type: 'command', command: '/usr/local/bin/my-security-checker.sh', timeout: 10 },
+              ],
+            },
+            {
+              matcher: '*',
+              hooks: [
+                { type: 'command', command: '/path/to/coding-agent-hook.sh', timeout: 5 },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              matcher: '*',
+              hooks: [
+                { type: 'command', command: '/path/to/coding-agent-hook.sh', timeout: 5 },
+              ],
+            },
+          ],
+        },
+      }
+      await writeFile(settingsPath, JSON.stringify(settings, null, 2))
+
+      await ClaudeAdapter.uninstallHooks()
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+
+      // User's PreToolUse security checker should remain
+      expect(result.hooks.PreToolUse).toHaveLength(1)
+      expect(result.hooks.PreToolUse[0].hooks[0].command).toBe('/usr/local/bin/my-security-checker.sh')
+
+      // Stop had only the bridge hook, so it should be removed entirely
+      expect(result.hooks.Stop).toBeUndefined()
+    })
+
+    it('should remove hooks object if all hooks were bridge-only', async () => {
+      // Install bridge hooks only
+      await ClaudeAdapter.installHooks('/path/to/coding-agent-hook.sh')
+
+      await ClaudeAdapter.uninstallHooks()
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+      expect(result.hooks).toBeUndefined()
     })
   })
 })

@@ -289,20 +289,25 @@ export const ClaudeAdapter: AgentAdapter = {
     }
     const hooks = settings.hooks as Record<string, unknown>
 
-    // Add hook configurations for each hook name
+    // Add hook configurations for each hook name, preserving existing user hooks
     for (const hookName of HOOK_NAMES) {
-      hooks[hookName] = [
-        {
-          matcher: '*',
-          hooks: [
-            {
-              type: 'command',
-              command: hookScriptPath,
-              timeout: 5,
-            },
-          ],
-        },
-      ]
+      const bridgeEntry = {
+        matcher: '*',
+        hooks: [
+          {
+            type: 'command',
+            command: hookScriptPath,
+            timeout: 5,
+          },
+        ],
+      }
+
+      // Preserve existing hooks, removing any previous bridge entry to avoid duplicates
+      const existing = Array.isArray(hooks[hookName]) ? hooks[hookName] as unknown[] : []
+      const filtered = existing.filter((entry: any) =>
+        !entry?.hooks?.some((h: any) => h.command?.includes('coding-agent-hook'))
+      )
+      hooks[hookName] = [...filtered, bridgeEntry]
     }
 
     // Write updated settings
@@ -319,9 +324,21 @@ export const ClaudeAdapter: AgentAdapter = {
       if (settings.hooks && typeof settings.hooks === 'object') {
         const hooks = settings.hooks as Record<string, unknown>
 
-        // Remove our hook configurations
+        // Remove only bridge hook entries, preserving user hooks
         for (const hookName of HOOK_NAMES) {
-          delete hooks[hookName]
+          if (!Array.isArray(hooks[hookName])) {
+            delete hooks[hookName]
+            continue
+          }
+          const entries = hooks[hookName] as unknown[]
+          const filtered = entries.filter((entry: any) =>
+            !entry?.hooks?.some((h: any) => h.command?.includes('coding-agent-hook'))
+          )
+          if (filtered.length === 0) {
+            delete hooks[hookName]
+          } else {
+            hooks[hookName] = filtered
+          }
         }
 
         // Remove hooks object if empty

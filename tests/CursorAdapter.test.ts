@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { CursorAdapter } from '../src/adapters/CursorAdapter.js'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { mkdir, rm, readFile, writeFile } from 'fs/promises'
+import { randomUUID } from 'crypto'
 
 describe('CursorAdapter', () => {
   describe('name and displayName', () => {
@@ -275,6 +279,132 @@ describe('CursorAdapter', () => {
       const path = CursorAdapter.getSettingsPath()
       expect(path).toContain('cursor-agent')
       expect(path).toContain('config.json')
+    })
+  })
+
+  describe('installHooks - preserves existing user hooks', () => {
+    let testDir: string
+    let settingsPath: string
+    let origGetSettingsPath: typeof CursorAdapter.getSettingsPath
+
+    beforeEach(async () => {
+      testDir = join(tmpdir(), `cursor-adapter-test-${randomUUID()}`)
+      await mkdir(testDir, { recursive: true })
+      settingsPath = join(testDir, 'config.json')
+
+      origGetSettingsPath = CursorAdapter.getSettingsPath
+      CursorAdapter.getSettingsPath = () => settingsPath
+    })
+
+    afterEach(async () => {
+      CursorAdapter.getSettingsPath = origGetSettingsPath
+      await rm(testDir, { recursive: true, force: true })
+    })
+
+    it('should not overwrite existing user hooks', async () => {
+      // User has pre-existing hooks
+      const existingSettings = {
+        hooks: {
+          PreToolUse: {
+            command: '/usr/local/bin/my-security-checker.sh',
+            timeout: 10,
+          },
+          Stop: {
+            command: '/usr/local/bin/my-session-logger.sh',
+            timeout: 5,
+          },
+        },
+      }
+      await writeFile(settingsPath, JSON.stringify(existingSettings, null, 2))
+
+      await CursorAdapter.installHooks('/path/to/coding-agent-hook.sh')
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+
+      // User's hooks should be preserved (not overwritten)
+      expect(result.hooks.PreToolUse.command).toBe('/usr/local/bin/my-security-checker.sh')
+      expect(result.hooks.Stop.command).toBe('/usr/local/bin/my-session-logger.sh')
+
+      // Hook names without existing user hooks should get bridge hooks
+      expect(result.hooks.PostToolUse.command).toBe('/path/to/coding-agent-hook.sh')
+      expect(result.hooks.SessionStart.command).toBe('/path/to/coding-agent-hook.sh')
+    })
+
+    it('should replace previous bridge hook on reinstall', async () => {
+      await CursorAdapter.installHooks('/old/path/to/coding-agent-hook.sh')
+      await CursorAdapter.installHooks('/new/path/to/coding-agent-hook.sh')
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+
+      // Should have the new path, not the old one
+      expect(result.hooks.PreToolUse.command).toBe('/new/path/to/coding-agent-hook.sh')
+    })
+
+    it('should work on fresh settings file', async () => {
+      await CursorAdapter.installHooks('/path/to/coding-agent-hook.sh')
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+      expect(result.hooks.PreToolUse.command).toBe('/path/to/coding-agent-hook.sh')
+    })
+  })
+
+  describe('uninstallHooks - preserves existing user hooks', () => {
+    let testDir: string
+    let settingsPath: string
+    let origGetSettingsPath: typeof CursorAdapter.getSettingsPath
+
+    beforeEach(async () => {
+      testDir = join(tmpdir(), `cursor-adapter-test-${randomUUID()}`)
+      await mkdir(testDir, { recursive: true })
+      settingsPath = join(testDir, 'config.json')
+
+      origGetSettingsPath = CursorAdapter.getSettingsPath
+      CursorAdapter.getSettingsPath = () => settingsPath
+    })
+
+    afterEach(async () => {
+      CursorAdapter.getSettingsPath = origGetSettingsPath
+      await rm(testDir, { recursive: true, force: true })
+    })
+
+    it('should only remove bridge hooks and preserve user hooks', async () => {
+      const settings = {
+        hooks: {
+          PreToolUse: {
+            command: '/usr/local/bin/my-security-checker.sh',
+            timeout: 10,
+          },
+          Stop: {
+            command: '/path/to/coding-agent-hook.sh',
+            timeout: 5,
+          },
+          SessionStart: {
+            command: '/path/to/coding-agent-hook.sh',
+            timeout: 5,
+          },
+        },
+      }
+      await writeFile(settingsPath, JSON.stringify(settings, null, 2))
+
+      await CursorAdapter.uninstallHooks()
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+
+      // User's hook should remain
+      expect(result.hooks.PreToolUse.command).toBe('/usr/local/bin/my-security-checker.sh')
+
+      // Bridge hooks should be removed
+      expect(result.hooks.Stop).toBeUndefined()
+      expect(result.hooks.SessionStart).toBeUndefined()
+    })
+
+    it('should remove hooks object if all hooks were bridge-only', async () => {
+      await CursorAdapter.installHooks('/path/to/coding-agent-hook.sh')
+
+      await CursorAdapter.uninstallHooks()
+
+      const result = JSON.parse(await readFile(settingsPath, 'utf8'))
+      expect(result.hooks).toBeUndefined()
     })
   })
 })
