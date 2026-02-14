@@ -442,6 +442,7 @@ export class SessionManager extends EventEmitter {
       if (
         session.type === 'internal' &&
         !session.agentSessionId &&
+        session.agent === agent &&
         session.cwd === cwd &&
         session.createdAt > recentThreshold
       ) {

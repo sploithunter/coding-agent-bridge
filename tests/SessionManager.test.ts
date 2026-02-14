@@ -249,6 +249,62 @@ describe('SessionManager', () => {
 
       expect(listener).not.toHaveBeenCalled()
     })
+
+    it('should not match internal session of a different agent type (issue #32)', async () => {
+      // Simulate an internal Claude session by writing it directly to the sessions file
+      // (we can't create internal sessions without tmux, so we load from persisted state)
+      const internalSessionId = 'internal-claude-id'
+      const sharedCwd = '/tmp/project'
+      const sessionsData = {
+        sessions: [
+          {
+            id: internalSessionId,
+            name: 'project',
+            type: 'internal',
+            agent: 'claude',
+            status: 'working',
+            cwd: sharedCwd,
+            createdAt: Date.now(), // Recent enough to match the 5-min window
+            lastActivity: Date.now(),
+            tmuxSession: 'cab-test1234',
+            // No agentSessionId — this is the unlinked internal session
+          },
+        ],
+        agentToManagedMap: [],
+        sessionCounter: 0,
+      }
+
+      await writeFile(config.sessionsFile, JSON.stringify(sessionsData), 'utf8')
+
+      // Reload manager with the persisted internal session
+      const manager2 = new SessionManager(config)
+      manager2.registerAdapter(ClaudeAdapter)
+      manager2.registerAdapter(CodexAdapter)
+      await manager2.load()
+
+      // The loaded internal session is marked offline; set it back to working
+      // and restore createdAt so it falls within the 5-minute recency window
+      const internalSession = manager2.getSession(internalSessionId)!
+      internalSession.status = 'working'
+      internalSession.createdAt = Date.now()
+
+      // Now process a Codex hook event in the same CWD
+      const result = manager2.findOrCreateSession(
+        'codex-session-1',
+        'codex',
+        sharedCwd
+      )
+
+      // The Codex event must NOT hijack the Claude internal session
+      expect(result.id).not.toBe(internalSessionId)
+      expect(result.agent).toBe('codex')
+      expect(result.agentSessionId).toBe('codex-session-1')
+
+      // The Claude internal session must remain unlinked
+      expect(internalSession.agentSessionId).toBeUndefined()
+
+      await manager2.stop()
+    })
   })
 
   describe('getSessionByAgentId', () => {
