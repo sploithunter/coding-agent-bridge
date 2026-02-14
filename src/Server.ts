@@ -234,9 +234,7 @@ export class BridgeServer extends EventEmitter {
    * Handle HTTP request
    */
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = new URL(req.url || '/', `http://${req.headers.host}`)
     const method = req.method?.toUpperCase() || 'GET'
-    const pathname = url.pathname
 
     // CORS handling
     const origin = req.headers.origin
@@ -254,9 +252,16 @@ export class BridgeServer extends EventEmitter {
       return
     }
 
-    this.debug(method, pathname)
-
     try {
+      let url: URL
+      try {
+        url = new URL(req.url || '/', `http://${req.headers.host}`)
+      } catch {
+        return sendError(res, 'Invalid request URL', 400)
+      }
+      const pathname = url.pathname
+
+      this.debug(method, pathname)
       // Health check
       if (pathname === '/health' && method === 'GET') {
         return sendJson(res, {

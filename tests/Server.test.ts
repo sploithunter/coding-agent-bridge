@@ -10,6 +10,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { mkdir, rm } from 'fs/promises'
 import { randomUUID } from 'crypto'
+import { connect } from 'net'
 
 describe('BridgeServer', () => {
   let server: BridgeServer
@@ -136,6 +137,29 @@ describe('BridgeServer', () => {
 
       const data = await res.json()
       expect(data.error).toBe('Not found')
+    })
+
+    it('should return 400 for malformed request URL instead of crashing (issue #23)', async () => {
+      // Send a raw HTTP request with an invalid Host header that causes
+      // new URL(path, `http://${host}`) to throw TypeError: Invalid URL.
+      // We use a raw TCP socket since fetch() won't send malformed headers.
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = connect(testPort, '127.0.0.1', () => {
+          socket.write('GET /health HTTP/1.1\r\nHost: [\r\nConnection: close\r\n\r\n')
+        })
+        let data = ''
+        socket.on('data', (chunk) => { data += chunk.toString() })
+        socket.on('end', () => resolve(data))
+        socket.on('error', reject)
+      })
+
+      // Should get a 400 response, not a connection reset from a crash
+      expect(response).toContain('400')
+      expect(response).toContain('Invalid request URL')
+
+      // Verify the server is still running by making a normal request
+      const healthRes = await fetch(`http://127.0.0.1:${testPort}/health`)
+      expect(healthRes.status).toBe(200)
     })
 
     describe('session CRUD', () => {
