@@ -249,6 +249,117 @@ describe('SessionManager', () => {
 
       expect(listener).not.toHaveBeenCalled()
     })
+
+    it('should match internal session by agent type, not just cwd (issue #38)', async () => {
+      // Simulate two internal sessions in the same cwd but different agents
+      // by writing them directly into the sessions file and loading
+      const now = Date.now()
+      const sessionsData = {
+        sessions: [
+          {
+            id: 'claude-session-id',
+            name: 'project',
+            type: 'internal',
+            agent: 'claude',
+            status: 'working',
+            cwd: '/tmp/project',
+            createdAt: now - 1000,
+            lastActivity: now - 1000,
+            tmuxSession: 'cab-claude',
+          },
+          {
+            id: 'codex-session-id',
+            name: 'project',
+            type: 'internal',
+            agent: 'codex',
+            status: 'working',
+            cwd: '/tmp/project',
+            createdAt: now,
+            lastActivity: now,
+            tmuxSession: 'cab-codex',
+          },
+        ],
+        agentToManagedMap: [],
+        sessionCounter: 0,
+      }
+
+      await writeFile(config.sessionsFile, JSON.stringify(sessionsData), 'utf8')
+      await manager.load()
+
+      // Mark sessions as non-offline so they're eligible (load marks internal as offline)
+      const claudeSession = manager.getSession('claude-session-id')!
+      const codexSession = manager.getSession('codex-session-id')!
+      manager.updateSessionStatus(claudeSession, 'working')
+      manager.updateSessionStatus(codexSession, 'working')
+
+      // A codex hook event should link to the codex session, not the claude one
+      const matched = manager.findOrCreateSession(
+        'codex-agent-session-id',
+        'codex',
+        '/tmp/project'
+      )
+
+      expect(matched.id).toBe('codex-session-id')
+      expect(matched.agent).toBe('codex')
+
+      // And a claude hook event should link to the claude session
+      const matchedClaude = manager.findOrCreateSession(
+        'claude-agent-session-id',
+        'claude',
+        '/tmp/project'
+      )
+
+      expect(matchedClaude.id).toBe('claude-session-id')
+      expect(matchedClaude.agent).toBe('claude')
+    })
+
+    it('should prefer newest internal session when multiple match (issue #38)', async () => {
+      const now = Date.now()
+      const sessionsData = {
+        sessions: [
+          {
+            id: 'older-session',
+            name: 'project',
+            type: 'internal',
+            agent: 'claude',
+            status: 'working',
+            cwd: '/tmp/project',
+            createdAt: now - 60000,
+            lastActivity: now - 60000,
+            tmuxSession: 'cab-older',
+          },
+          {
+            id: 'newer-session',
+            name: 'project',
+            type: 'internal',
+            agent: 'claude',
+            status: 'working',
+            cwd: '/tmp/project',
+            createdAt: now,
+            lastActivity: now,
+            tmuxSession: 'cab-newer',
+          },
+        ],
+        agentToManagedMap: [],
+        sessionCounter: 0,
+      }
+
+      await writeFile(config.sessionsFile, JSON.stringify(sessionsData), 'utf8')
+      await manager.load()
+
+      const older = manager.getSession('older-session')!
+      const newer = manager.getSession('newer-session')!
+      manager.updateSessionStatus(older, 'working')
+      manager.updateSessionStatus(newer, 'working')
+
+      const matched = manager.findOrCreateSession(
+        'some-agent-id',
+        'claude',
+        '/tmp/project'
+      )
+
+      expect(matched.id).toBe('newer-session')
+    })
   })
 
   describe('getSessionByAgentId', () => {
