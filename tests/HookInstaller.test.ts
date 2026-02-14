@@ -9,6 +9,7 @@ import { join } from 'path'
 import { mkdir, rm, readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
+import { spawnSync } from 'child_process'
 
 describe('HookInstaller', () => {
   let installer: HookInstaller
@@ -109,6 +110,99 @@ describe('HookInstaller', () => {
       expect(results.length).toBeGreaterThanOrEqual(2)
       expect(results.some((r) => r.agent === 'claude')).toBe(true)
       expect(results.some((r) => r.agent === 'codex')).toBe(true)
+    })
+  })
+
+  describe('shell injection prevention (issue #16)', () => {
+    it('should not execute shell metacharacters in dataDir when hook script runs', async () => {
+      const markerFile = join(tmpdir(), `wizhook-injection-test-${randomUUID()}`)
+      const maliciousDir = join(tmpdir(), `wizhook\$(touch ${markerFile})`)
+
+      await mkdir(maliciousDir, { recursive: true })
+
+      try {
+        const maliciousInstaller = new HookInstaller({
+          dataDir: maliciousDir,
+          debug: false,
+        })
+
+        await maliciousInstaller.installAll()
+
+        const hookPath = maliciousInstaller.getHookScriptPath()
+        const content = await readFile(hookPath, 'utf8')
+
+        // The EVENTS_FILE assignment must use single quotes to prevent expansion
+        expect(content).toMatch(/EVENTS_FILE='[^']*'/)
+        expect(content).not.toMatch(/EVENTS_FILE="[^"]*\$\(/)
+
+        // Actually run the script to verify no injection occurs
+        // Use spawnSync to avoid shell expansion of the path itself
+        // The script will fail (no jq input, etc.) but the key thing is
+        // the marker file must NOT be created
+        const result = spawnSync('bash', [hookPath, 'test'], {
+          input: '{}',
+          timeout: 5000,
+          env: { ...process.env, PATH: process.env.PATH },
+        })
+
+        expect(existsSync(markerFile)).toBe(false)
+      } finally {
+        await rm(maliciousDir, { recursive: true, force: true }).catch(() => {})
+        await rm(markerFile, { force: true }).catch(() => {})
+      }
+    })
+
+    it('should escape single quotes in dataDir', async () => {
+      const dirWithQuote = join(tmpdir(), `wizhook-quote'test-${randomUUID()}`)
+
+      await mkdir(dirWithQuote, { recursive: true })
+
+      try {
+        const quoteInstaller = new HookInstaller({
+          dataDir: dirWithQuote,
+          debug: false,
+        })
+
+        await quoteInstaller.installAll()
+
+        const hookPath = quoteInstaller.getHookScriptPath()
+        const content = await readFile(hookPath, 'utf8')
+
+        // Single quotes within the value should be escaped as '\''
+        expect(content).toContain("'\\''")
+      } finally {
+        await rm(dirWithQuote, { recursive: true, force: true }).catch(() => {})
+      }
+    })
+
+    it('should safely handle backticks in dataDir', async () => {
+      const markerFile = join(tmpdir(), `wizhook-backtick-test-${randomUUID()}`)
+      const backtickDir = join(tmpdir(), `wizhook\`touch ${markerFile}\``)
+
+      await mkdir(backtickDir, { recursive: true })
+
+      try {
+        const backtickInstaller = new HookInstaller({
+          dataDir: backtickDir,
+          debug: false,
+        })
+
+        await backtickInstaller.installAll()
+
+        const hookPath = backtickInstaller.getHookScriptPath()
+
+        // Use spawnSync to avoid shell expansion of the path itself
+        spawnSync('bash', [hookPath, 'test'], {
+          input: '{}',
+          timeout: 5000,
+          env: { ...process.env, PATH: process.env.PATH },
+        })
+
+        expect(existsSync(markerFile)).toBe(false)
+      } finally {
+        await rm(backtickDir, { recursive: true, force: true }).catch(() => {})
+        await rm(markerFile, { force: true }).catch(() => {})
+      }
     })
   })
 

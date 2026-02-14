@@ -297,6 +297,8 @@ export class HookInstaller {
    */
   private generateHookScript(): string {
     const eventsFile = this.getEventsFilePath()
+    // Escape for safe inclusion in single-quoted shell string: replace ' with '\''
+    const safeEventsFile = eventsFile.replace(/'/g, "'\\''")
 
     return `#!/bin/bash
 # coding-agent-hook.sh
@@ -306,7 +308,7 @@ export class HookInstaller {
 set -e
 
 # Configuration
-EVENTS_FILE="${eventsFile}"
+EVENTS_FILE='${safeEventsFile}'
 SERVER_URL="\${CODING_AGENT_BRIDGE_URL:-http://127.0.0.1:4003}"
 DEBUG="\${CODING_AGENT_BRIDGE_DEBUG:-}"
 
