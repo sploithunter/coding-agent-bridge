@@ -411,6 +411,54 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('start() idempotency (issue #19)', () => {
+    it('should clear previous intervals when start() is called again', async () => {
+      vi.useFakeTimers()
+
+      let healthCalls = 0
+      let timeoutCalls = 0
+      const mgr = manager as any
+      mgr.checkTmuxHealth = async () => { healthCalls++ }
+      mgr.checkWorkingTimeout = () => { timeoutCalls++ }
+
+      await manager.start()
+      await manager.start() // Second start should not double the intervals
+
+      // Advance past one health-check interval (10s)
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      // With the fix, each method fires exactly once per interval tick
+      // Without the fix, they would fire twice (one per start() call)
+      expect(healthCalls).toBe(1)
+      expect(timeoutCalls).toBe(1)
+
+      await manager.stop()
+      vi.useRealTimers()
+    })
+
+    it('stop() should cancel all timers even after multiple start() calls', async () => {
+      vi.useFakeTimers()
+
+      let calls = 0
+      const mgr = manager as any
+      mgr.checkTmuxHealth = async () => { calls++ }
+      mgr.checkWorkingTimeout = () => { calls++ }
+
+      await manager.start()
+      await manager.start()
+      await manager.start()
+      await manager.stop()
+
+      // After stop, advancing time should not trigger any callbacks
+      calls = 0
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(calls).toBe(0)
+
+      vi.useRealTimers()
+    })
+  })
+
   describe('external session tracking config', () => {
     it('should not persist sessions when tracking disabled', () => {
       const noTrackConfig = { ...config, trackExternalSessions: false }

@@ -618,6 +618,9 @@ export class SessionManager extends EventEmitter {
   // ===========================================================================
 
   private startHealthChecks(): void {
+    // Clear any existing intervals to ensure idempotency
+    this.stopHealthChecks()
+
     // Check tmux session health every 10 seconds
     this.healthCheckInterval = setInterval(() => {
       this.checkTmuxHealth().catch((err) => {
