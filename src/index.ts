@@ -184,30 +184,7 @@ export type {
 // Main API
 // =============================================================================
 
-// TODO: Implement in Phase 2-5
-// export { createBridge } from './Bridge.js'
-
-// Placeholder until Bridge is implemented
-import type { Bridge, BridgeConfig } from './types.js'
-
-/**
- * Create a new bridge instance.
- *
- * @param config - Bridge configuration options
- * @returns A new Bridge instance
- *
- * @example
- * ```typescript
- * const bridge = createBridge({
- *   dataDir: '~/.cin-interface',
- *   port: 4003,
- * })
- * ```
- */
-export function createBridge(_config?: BridgeConfig): Bridge {
-  // TODO: Implement in Phase 2-5
-  throw new Error('createBridge not yet implemented - coming in Phase 2-5')
-}
+export { createBridge } from './Bridge.js'
 
 // =============================================================================
 // WebSocket Interface Types
