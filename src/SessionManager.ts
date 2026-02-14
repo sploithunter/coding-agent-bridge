@@ -7,7 +7,8 @@
  */
 
 import { EventEmitter } from 'events'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, realpath } from 'fs/promises'
+import { realpathSync } from 'fs'
 import { dirname, basename } from 'path'
 import { randomUUID } from 'crypto'
 import type {
@@ -147,8 +148,9 @@ export class SessionManager extends EventEmitter {
     const shortId = id.slice(0, 8)
     const tmuxSessionName = `cab-${shortId}` // cab = coding-agent-bridge
 
-    // Determine working directory
-    const cwd = options.cwd ?? process.env.HOME ?? '/tmp'
+    // Determine working directory (resolve symlinks for consistent matching)
+    const rawCwd = options.cwd ?? process.env.HOME ?? '/tmp'
+    const cwd = await realpath(rawCwd).catch(() => rawCwd)
 
     // Determine session name
     const name = options.name ?? basename(cwd) ?? `session-${++this.sessionCounter}`
@@ -411,6 +413,9 @@ export class SessionManager extends EventEmitter {
     terminal?: TerminalInfo,
     transcriptPath?: string
   ): Session {
+    // Resolve symlinks for consistent CWD matching (e.g., /tmp -> /private/tmp on macOS)
+    try { cwd = realpathSync(cwd) } catch { /* use original if resolve fails */ }
+
     // Check if we already have a mapping
     const existingId = this.agentToManagedMap.get(agentSessionId)
     if (existingId) {

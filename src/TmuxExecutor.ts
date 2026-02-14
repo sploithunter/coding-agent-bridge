@@ -240,6 +240,11 @@ export class TmuxExecutor {
     if (options.command) {
       // Small delay to ensure session is ready
       await this.sleep(100)
+      // Unset CLAUDECODE to prevent nested-session detection errors
+      // when the bridge itself runs inside a Claude Code session
+      await this.sendKeys({ target: name, keys: 'unset CLAUDECODE' })
+      await this.sendKeys({ target: name, keys: 'Enter' })
+      await this.sleep(100)
       await this.sendKeys({
         target: name,
         keys: options.command,
