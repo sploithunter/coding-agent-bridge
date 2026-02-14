@@ -1,4 +1,8 @@
 import { describe, it, expect } from 'vitest'
+import { mkdtemp, writeFile, unlink, rmdir, stat } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { randomBytes } from 'crypto'
 import {
   validateSessionName,
   validatePath,
@@ -107,5 +111,45 @@ describe('TmuxExecutor', () => {
       logger: (msg) => logs.push(msg),
     })
     expect(executor).toBeInstanceOf(TmuxExecutor)
+  })
+})
+
+describe('pasteBuffer temp directory cleanup (regression #6)', () => {
+  it('should remove temp directory with rmdir after unlinking file', async () => {
+    // Simulate exactly what pasteBuffer does: mkdtemp, write file, unlink file, rmdir dir
+    const tmpDir = await mkdtemp(join(tmpdir(), 'tmux-bridge-test-'))
+    const tmpFile = join(tmpDir, `prompt-${randomBytes(8).toString('hex')}.txt`)
+    await writeFile(tmpFile, 'test prompt', 'utf8')
+
+    // Verify both exist
+    await expect(stat(tmpDir)).resolves.toBeTruthy()
+    await expect(stat(tmpFile)).resolves.toBeTruthy()
+
+    // Clean up the way the fixed code does: unlink file, then rmdir directory
+    await unlink(tmpFile)
+    await rmdir(tmpDir)
+
+    // Verify both are gone
+    await expect(stat(tmpDir)).rejects.toThrow(/ENOENT/)
+    await expect(stat(tmpFile)).rejects.toThrow(/ENOENT/)
+  })
+
+  it('should fail to remove temp directory with unlink (the old bug)', async () => {
+    // Demonstrate that the old approach (unlink on a directory) fails
+    const tmpDir = await mkdtemp(join(tmpdir(), 'tmux-bridge-test-'))
+    const tmpFile = join(tmpDir, `prompt-${randomBytes(8).toString('hex')}.txt`)
+    await writeFile(tmpFile, 'test prompt', 'utf8')
+
+    await unlink(tmpFile)
+
+    // unlink() on a directory fails with EPERM (macOS) or EISDIR (Linux)
+    await expect(unlink(tmpDir)).rejects.toThrow()
+
+    // The directory still exists because unlink failed
+    const dirStat = await stat(tmpDir)
+    expect(dirStat.isDirectory()).toBe(true)
+
+    // Clean up for real
+    await rmdir(tmpDir)
   })
 })

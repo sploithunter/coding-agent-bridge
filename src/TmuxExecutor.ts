@@ -7,7 +7,7 @@
 
 import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
-import { writeFile, unlink, mkdtemp } from 'fs/promises'
+import { writeFile, unlink, mkdtemp, rmdir } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
@@ -372,7 +372,7 @@ export class TmuxExecutor {
       try {
         await unlink(tmpFile)
         // Try to remove the temp directory too
-        await unlink(tmpDir).catch(() => {})
+        await rmdir(tmpDir).catch(() => {})
       } catch {
         // Ignore cleanup errors
       }
