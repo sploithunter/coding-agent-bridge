@@ -30,17 +30,22 @@ import { TranscriptWatcher } from './TranscriptWatcher.js'
 // Types
 // =============================================================================
 
+/** Default timeout values */
+const DEFAULT_WORKING_TIMEOUT_MS = 120_000          // 2 minutes
+const DEFAULT_OFFLINE_CLEANUP_MS = 3_600_000        // 1 hour
+const DEFAULT_STALE_CLEANUP_MS = 7 * 24 * 3_600_000 // 7 days
+
 export interface SessionManagerConfig {
   /** Path to sessions.json file */
   sessionsFile: string
   /** Default agent type */
   defaultAgent: AgentType
-  /** Timeout (ms) before marking working sessions as idle */
-  workingTimeoutMs: number
-  /** Time (ms) before cleaning up offline internal sessions */
-  offlineCleanupMs: number
-  /** Time (ms) before cleaning up stale sessions */
-  staleCleanupMs: number
+  /** Timeout (ms) before marking working sessions as idle. Default: 120000 (2 min) */
+  workingTimeoutMs?: number
+  /** Time (ms) before cleaning up offline internal sessions. Default: 3600000 (1 hour) */
+  offlineCleanupMs?: number
+  /** Time (ms) before cleaning up stale sessions. Default: 604800000 (7 days) */
+  staleCleanupMs?: number
   /** Whether to track external sessions */
   trackExternalSessions: boolean
   /** Enable debug logging */
@@ -75,7 +80,7 @@ export class SessionManager extends EventEmitter {
   private sessionCounter = 0
   private adapters: Map<string, AgentAdapter> = new Map()
   private tmux: TmuxExecutor
-  private config: SessionManagerConfig
+  private config: Required<Pick<SessionManagerConfig, 'workingTimeoutMs' | 'offlineCleanupMs' | 'staleCleanupMs'>> & SessionManagerConfig
   private healthCheckInterval?: NodeJS.Timeout
   private workingTimeoutInterval?: NodeJS.Timeout
   private cleanupInterval?: NodeJS.Timeout
@@ -83,7 +88,12 @@ export class SessionManager extends EventEmitter {
 
   constructor(config: SessionManagerConfig) {
     super()
-    this.config = config
+    this.config = {
+      ...config,
+      workingTimeoutMs: config.workingTimeoutMs ?? DEFAULT_WORKING_TIMEOUT_MS,
+      offlineCleanupMs: config.offlineCleanupMs ?? DEFAULT_OFFLINE_CLEANUP_MS,
+      staleCleanupMs: config.staleCleanupMs ?? DEFAULT_STALE_CLEANUP_MS,
+    }
     this.tmux = new TmuxExecutor({ debug: config.debug })
   }
 
