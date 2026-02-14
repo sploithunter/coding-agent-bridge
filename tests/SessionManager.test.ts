@@ -411,6 +411,58 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('timeout defaults (issue #18)', () => {
+    it('should apply default timeout values when none are provided', () => {
+      const minimalManager = new SessionManager({
+        sessionsFile: join(testDir, 'sessions.json'),
+        defaultAgent: 'claude',
+        trackExternalSessions: false,
+        debug: false,
+      })
+
+      // Access the resolved config via the private field
+      const resolvedConfig = (minimalManager as any)['config']
+      expect(resolvedConfig.workingTimeoutMs).toBe(120_000)
+      expect(resolvedConfig.offlineCleanupMs).toBe(3_600_000)
+      expect(resolvedConfig.staleCleanupMs).toBe(7 * 24 * 3_600_000)
+    })
+
+    it('should respect explicitly provided timeout values', () => {
+      const customManager = new SessionManager({
+        sessionsFile: join(testDir, 'sessions.json'),
+        defaultAgent: 'claude',
+        workingTimeoutMs: 5000,
+        offlineCleanupMs: 10000,
+        staleCleanupMs: 20000,
+        trackExternalSessions: false,
+        debug: false,
+      })
+
+      const resolvedConfig = (customManager as any)['config']
+      expect(resolvedConfig.workingTimeoutMs).toBe(5000)
+      expect(resolvedConfig.offlineCleanupMs).toBe(10000)
+      expect(resolvedConfig.staleCleanupMs).toBe(20000)
+    })
+
+    it('should never have undefined timeout values', () => {
+      // This is the exact scenario from the issue PoC
+      const manager = new SessionManager({
+        sessionsFile: '/tmp/does-not-matter.json',
+        defaultAgent: 'claude',
+        trackExternalSessions: false,
+        debug: false,
+      })
+
+      const resolvedConfig = (manager as any)['config']
+      expect(resolvedConfig.workingTimeoutMs).toBeTypeOf('number')
+      expect(resolvedConfig.offlineCleanupMs).toBeTypeOf('number')
+      expect(resolvedConfig.staleCleanupMs).toBeTypeOf('number')
+      expect(resolvedConfig.workingTimeoutMs).toBeGreaterThan(0)
+      expect(resolvedConfig.offlineCleanupMs).toBeGreaterThan(0)
+      expect(resolvedConfig.staleCleanupMs).toBeGreaterThan(0)
+    })
+  })
+
   describe('external session tracking config', () => {
     it('should not persist sessions when tracking disabled', () => {
       const noTrackConfig = { ...config, trackExternalSessions: false }
