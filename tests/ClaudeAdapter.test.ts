@@ -30,11 +30,11 @@ describe('ClaudeAdapter', () => {
       expect(cmd).toBe('claude')
     })
 
-    it('should add custom flags', () => {
+    it('should add custom flags with shell quoting', () => {
       const cmd = ClaudeAdapter.buildCommand({
         flags: { 'model': 'claude-3-opus' },
       })
-      expect(cmd).toContain('--model=claude-3-opus')
+      expect(cmd).toContain("--model='claude-3-opus'")
     })
 
     it('should handle boolean flags correctly', () => {
@@ -43,6 +43,45 @@ describe('ClaudeAdapter', () => {
       })
       expect(cmd).toContain('--verbose')
       expect(cmd).not.toContain('--quiet')
+    })
+
+    it('should prevent command injection via semicolons in flag values', () => {
+      const cmd = ClaudeAdapter.buildCommand({
+        flags: { 'model': 'x; touch /tmp/bridge-rce' },
+      })
+      // The semicolon must be inside quotes, not bare
+      expect(cmd).not.toMatch(/--model=x;/)
+      expect(cmd).toContain("--model='x; touch /tmp/bridge-rce'")
+    })
+
+    it('should prevent command injection via pipes in flag values', () => {
+      const cmd = ClaudeAdapter.buildCommand({
+        flags: { 'model': 'x | cat /etc/passwd' },
+      })
+      expect(cmd).not.toMatch(/--model=x \|/)
+      expect(cmd).toContain("--model='x | cat /etc/passwd'")
+    })
+
+    it('should prevent command injection via backticks in flag values', () => {
+      const cmd = ClaudeAdapter.buildCommand({
+        flags: { 'model': 'x`whoami`' },
+      })
+      expect(cmd).toContain("--model='x`whoami`'")
+    })
+
+    it('should prevent command injection via $() in flag values', () => {
+      const cmd = ClaudeAdapter.buildCommand({
+        flags: { 'model': '$(rm -rf /)' },
+      })
+      expect(cmd).toContain("--model='$(rm -rf /)'")
+    })
+
+    it('should reject flag keys with shell metacharacters', () => {
+      expect(() =>
+        ClaudeAdapter.buildCommand({
+          flags: { 'model;rm -rf /': 'value' },
+        })
+      ).toThrow(/Invalid flag key/)
     })
   })
 
