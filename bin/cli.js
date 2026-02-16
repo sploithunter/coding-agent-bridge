@@ -352,6 +352,7 @@ async function runServer(ctx) {
     defaultAgent: 'claude',
     trackExternalSessions: true,
     debug: options.debug,
+    workingTimeoutMs: 10 * 60 * 1000, // 10 minutes between hook events before marking idle
   })
   manager.registerAdapter(ClaudeAdapter)
   manager.registerAdapter(CodexAdapter)
