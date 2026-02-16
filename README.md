@@ -449,6 +449,36 @@ const MyAdapter: AgentAdapter = {
 }
 ```
 
+## UI Agent Handoff Pattern
+
+The bridge enables a powerful delegation pattern: a supervising agent (e.g., OpenAI Codex) can spawn and monitor Claude Code sessions for UI work, while it focuses on backend or orchestration tasks.
+
+```
+Supervisor agent (Codex, Claude, etc.)
+  └─→ coding-agent-bridge (REST API + tmux session manager)
+        └─→ Claude Code (UI worker, in tmux with --chrome)
+              └─→ implements frontend features
+```
+
+### How it works
+
+1. **Start the bridge** — `coding-agent-bridge server`
+2. **Spawn a Claude session in tmux** — directly or via the REST API
+3. **Send scoped UI prompts** — one feature per prompt, with a structured "definition of done"
+4. **Monitor for completion** — via hook events, WebSocket, or tmux polling
+5. **Validate and iterate** — capture output, run tests, send the next prompt
+
+The `--chrome` flag gives Claude Code browser control for visual verification. The `--dangerously-skip-permissions` flag allows autonomous operation without approval prompts.
+
+### Key principles
+
+- Backend contracts are owned by the backend agent; the UI agent adapts to them
+- UI agent outputs evidence: changed files, test results, build status, screenshots, risks
+- Small iterations: one scoped prompt, then verify, rather than long unattended runs
+- Monitor frequently using hook events or tmux polling
+
+See `docs/UI_AGENT_HANDOFF_RUNBOOK.md` for the full step-by-step runbook, `docs/UI_AGENT_PROMPTS.md` for an example prompt sequence, and `docs/AGENT_MONITOR.md` for the monitoring pattern.
+
 ## Architecture
 
 ```
